@@ -19,6 +19,9 @@ const config: Config = {
           700: "#17304f",
           900: "#0c1a2e",
         },
+        accent: {
+          DEFAULT: "#c8102e",
+        },
       },
       boxShadow: {
         card: "0 1px 2px rgba(12, 26, 46, 0.06), 0 1px 6px rgba(12, 26, 46, 0.05)",
