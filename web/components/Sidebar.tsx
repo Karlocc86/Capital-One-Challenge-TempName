@@ -1,10 +1,14 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import CreditWiseCard from "@/components/CreditWiseCard";
 
 type NavItem = {
   label: string;
+  href: string;
   icon: React.ReactNode;
   chipColor: string;
-  active?: boolean;
 };
 
 const iconProps = {
@@ -21,7 +25,7 @@ const iconProps = {
 const navItems: NavItem[] = [
   {
     label: "Cuenta Checking",
-    active: true,
+    href: "/",
     chipColor: "bg-brand-700",
     icon: (
       <svg {...iconProps}>
@@ -33,6 +37,7 @@ const navItems: NavItem[] = [
   },
   {
     label: "Ahorros",
+    href: "/ahorros",
     chipColor: "bg-emerald-500",
     icon: (
       <svg {...iconProps}>
@@ -43,6 +48,7 @@ const navItems: NavItem[] = [
   },
   {
     label: "Tarjetas de Crédito",
+    href: "/tarjetas-de-credito",
     chipColor: "bg-slate-500",
     icon: (
       <svg {...iconProps}>
@@ -54,6 +60,7 @@ const navItems: NavItem[] = [
   },
   {
     label: "Préstamos",
+    href: "/prestamos",
     chipColor: "bg-violet-500",
     icon: (
       <svg {...iconProps}>
@@ -64,6 +71,7 @@ const navItems: NavItem[] = [
   },
   {
     label: "Recompensas",
+    href: "/recompensas",
     chipColor: "bg-amber-500",
     icon: (
       <svg {...iconProps}>
@@ -75,27 +83,33 @@ const navItems: NavItem[] = [
 ];
 
 export default function Sidebar() {
+  const pathname = usePathname();
+
   return (
     <aside className="hidden h-full w-64 shrink-0 flex-col bg-brand-700 text-white sm:flex">
       <div className="h-6" />
 
       <nav className="flex flex-col gap-1 overflow-y-auto px-3">
-        {navItems.map((item) => (
-          <button
-            key={item.label}
-            type="button"
-            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors ${
-              item.active
-                ? "bg-white text-brand-700"
-                : "text-brand-50/80 hover:bg-brand-600 hover:text-white"
-            }`}
-          >
-            <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white ${item.chipColor}`}>
-              {item.icon}
-            </span>
-            <span>{item.label}</span>
-          </button>
-        ))}
+        {navItems.map((item) => {
+          const active = pathname === item.href;
+
+          return (
+            <Link
+              key={item.label}
+              href={item.href}
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors ${
+                active
+                  ? "bg-white text-brand-700"
+                  : "text-brand-50/80 hover:bg-brand-600 hover:text-white"
+              }`}
+            >
+              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white ${item.chipColor}`}>
+                {item.icon}
+              </span>
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
       </nav>
 
       <div className="flex-1" />
