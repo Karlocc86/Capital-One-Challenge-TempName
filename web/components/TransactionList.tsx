@@ -1,3 +1,4 @@
+import CardMenu from "@/components/CardMenu";
 import type { Transaction } from "@/lib/mockData";
 
 const currency = (value: number) =>
@@ -12,14 +13,17 @@ type Props = {
 export default function TransactionList({ title, transactions, showViewAll }: Props) {
   return (
     <div className="rounded-2xl bg-white p-6 shadow-card">
-      <h2 className="text-sm font-semibold text-slate-800">{title}</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-bold text-slate-900">{title}</h2>
+        <CardMenu />
+      </div>
 
       <ul className="mt-4 divide-y divide-slate-100">
         {transactions.map((tx) => (
           <li key={tx.id} className="flex items-center justify-between gap-3 py-3">
             <div className="flex items-center gap-3">
               <span
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white ${tx.badgeColor}`}
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-base font-bold text-white ${tx.badgeColor}`}
               >
                 {tx.initial}
               </span>
@@ -38,7 +42,7 @@ export default function TransactionList({ title, transactions, showViewAll }: Pr
       </ul>
 
       {showViewAll && (
-        <button type="button" className="mt-3 text-sm font-semibold text-brand-700 hover:underline">
+        <button type="button" className="mt-3 text-[11px] font-bold uppercase tracking-wide text-brand-700 hover:underline">
           Ver todo &gt;
         </button>
       )}

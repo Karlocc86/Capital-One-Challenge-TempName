@@ -20,7 +20,7 @@ export default function CreditWiseCard() {
       </div>
 
       <p className="mt-4 text-xs text-brand-50/70">Actualizado: {creditWise.updated}</p>
-      <button type="button" className="mt-2 text-xs font-semibold text-white hover:underline">
+      <button type="button" className="mt-2 text-[11px] font-bold uppercase tracking-wide text-white hover:underline">
         Ver tu puntaje &gt;
       </button>
     </div>

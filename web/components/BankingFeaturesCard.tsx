@@ -1,3 +1,5 @@
+import CardMenu from "@/components/CardMenu";
+
 const iconProps = {
   width: 22,
   height: 22,
@@ -54,7 +56,10 @@ const features = [
 export default function BankingFeaturesCard() {
   return (
     <div className="rounded-2xl bg-white p-6 shadow-card">
-      <h2 className="text-sm font-semibold text-slate-800">Funciones bancarias</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-bold text-slate-900">Funciones bancarias</h2>
+        <CardMenu />
+      </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {features.map((feature) => (
@@ -69,7 +74,7 @@ export default function BankingFeaturesCard() {
         ))}
       </div>
 
-      <button type="button" className="mt-4 text-sm font-semibold text-brand-700 hover:underline">
+      <button type="button" className="mt-4 text-[11px] font-bold uppercase tracking-wide text-brand-700 hover:underline">
         Ver todo &gt;
       </button>
     </div>
