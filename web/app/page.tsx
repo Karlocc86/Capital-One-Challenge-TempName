@@ -1,68 +1,38 @@
-"use client";
-
-import { useEffect, useState } from "react";
-
-type Summary = {
-  account_id: string;
-  nickname: string;
-  balance: number;
-  total_spent: number;
-  purchase_count: number;
-};
-
-type State =
-  | { status: "loading" }
-  | { status: "error"; message: string }
-  | { status: "success"; summary: Summary };
+import Header from "@/components/Header";
+import Sidebar from "@/components/Sidebar";
+import BalanceOverviewCard from "@/components/BalanceOverviewCard";
+import TransactionList from "@/components/TransactionList";
+import BankingFeaturesCard from "@/components/BankingFeaturesCard";
+import SpendingCard from "@/components/SpendingCard";
+import { recentTransactions, upcomingTransactions } from "@/lib/mockData";
 
 export default function Home() {
-  const [state, setState] = useState<State>({ status: "loading" });
-
-  useEffect(() => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-    const accountId = process.env.NEXT_PUBLIC_DEMO_ACCOUNT_ID;
-
-    fetch(`${apiUrl}/summary/${accountId}`)
-      .then(async (res) => {
-        if (!res.ok) {
-          throw new Error(`Backend respondió ${res.status}`);
-        }
-        return res.json();
-      })
-      .then((body) => {
-        setState({ status: "success", summary: body.data });
-      })
-      .catch((err: Error) => {
-        setState({ status: "error", message: err.message });
-      });
-  }, []);
-
   return (
-    <main className="min-h-screen flex items-center justify-center p-8">
-      {state.status === "loading" && (
-        <p className="text-lg text-gray-500">Cargando resumen...</p>
-      )}
+    <div className="min-h-screen bg-slate-100 p-3 sm:p-6">
+      <div className="flex min-h-[calc(100vh-1.5rem)] flex-col overflow-hidden rounded-3xl shadow-xl sm:min-h-[calc(100vh-3rem)]">
+        <Header />
 
-      {state.status === "error" && (
-        <p className="text-lg text-red-600">
-          No se pudo cargar el resumen: {state.message}
-        </p>
-      )}
+        <div className="flex flex-1">
+          <Sidebar />
 
-      {state.status === "success" && (
-        <div className="flex flex-col gap-2 text-center">
-          <h1 className="text-sm uppercase tracking-wide text-gray-500">
-            {state.summary.nickname}
-          </h1>
-          <p className="text-5xl font-bold">
-            ${state.summary.balance.toLocaleString()}
-          </p>
-          <p className="text-gray-600">
-            Gasto total: ${state.summary.total_spent.toLocaleString()} (
-            {state.summary.purchase_count} compras)
-          </p>
+          <main className="flex flex-1 flex-col gap-6 bg-[var(--background)] p-4 sm:p-8 lg:flex-row lg:items-start">
+            <div className="flex flex-1 flex-col gap-6 lg:max-w-2xl">
+              <BalanceOverviewCard />
+              <TransactionList title="Transacciones recientes" transactions={recentTransactions} />
+            </div>
+
+            <div className="flex w-full flex-col gap-6 lg:w-80 lg:shrink-0">
+              <TransactionList
+                title="Próximas transacciones"
+                transactions={upcomingTransactions}
+                showViewAll
+              />
+              <BankingFeaturesCard />
+              <SpendingCard />
+            </div>
+          </main>
         </div>
-      )}
-    </main>
+      </div>
+    </div>
   );
 }
