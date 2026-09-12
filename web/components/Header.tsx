@@ -3,7 +3,7 @@ import Image from "next/image";
 export default function Header() {
   return (
     <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-100 bg-white px-4 sm:h-20 sm:px-8">
-      <Image src="/logo.png" alt="Capital Autonomy" width={160} height={34} priority className="h-7 w-auto sm:h-8" />
+      <Image src="/logo.png" alt="Capital Autonomy" width={160} height={34} priority className="h-10 w-auto sm:h-12" />
 
       <div className="flex items-center gap-4 sm:gap-6">
         <button

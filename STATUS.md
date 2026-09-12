@@ -55,7 +55,32 @@ El customer demo dejó de ser "Demo HackMTY" genérico. Ahora es **"Ricardo Torr
 
 Fuente citable: [ENIGH 2024, INEGI](https://www.inegi.org.mx/contenidos/saladeprensa/boletines/2025/enigh/ENIGH2024_RR.pdf).
 
-`account_id` demo actual: `e8f0c102-eb26-4baf-ad78-629cc03c4d74` (reemplazó al anterior `fea9ad73-...`, ya actualizado en todos los scripts y en `web/.env.local`). La cuenta vieja "Demo HackMTY" quedó huérfana en Nessie, sin usarse — no se borró, es inofensiva.
+`account_id` demo actual: **`258f79f0-ff2e-49ca-b9f4-d658317e0168`** ("Cuenta de Cheques"). Vive en `.env` (`DEMO_ACCOUNT_ID`, lo leen los scripts de prueba vía `app/config.py`) y en `web/.env.local` (`NEXT_PUBLIC_DEMO_ACCOUNT_ID`). La cuenta anterior `e8f0c102-…` ("Cuenta Principal", 15 compras aleatorias) **se borró de Nessie** porque era del mismo customer y aparecía en `/accounts`.
+
+## Dataset demo determinista (2026-09-12)
+
+El seed dejó de ser aleatorio. `app/demo_data.py` es la fuente de verdad y `scripts/seed.py` lo siembra en Nessie:
+
+- **2 cuentas**: Checking "Cuenta de Cheques" ($3,200) y Savings "Ahorro" ($500, base para la acción "mover a ahorro").
+- **8 merchants de Monterrey** (OXXO, Soriana Híper, Pemex, Camión Urbano MTY, Tacos El Güero, Telcel, Farmacias Guadalajara, Coppel). La `category` del merchant en Nessie **es la etiqueta que pinta la UI** (Supermercado, Comida y bebida, Transporte y combustible, Servicios y facturas, Salud, Ropa) — una sola fuente de verdad, sin tabla de mapeo.
+- **26 purchases** con día relativo a hoy, monto y descripción fijos (total $2,501.70 / 30 días; alimentos+súper ≈ 61 %, transporte ≈ 18 %, proporciones ENIGH decil III).
+- **2 depósitos de nómina** ($6,141 c/u, días −25 y −10 = $12,282/mes).
+- **3 bills** sin cambio (Renta 3,500 día 1 · Servicios 450 día 15 · Préstamo 800 día 10).
+- Resultado verificado: burn **$235.05/día → insolvencia en 13 días**, R² 0.99 (`scripts/test_forecaster.py` ahora lo asegura con un `assert 10 <= days <= 16`).
+
+Idempotencia: customer/cuentas/merchants/bills por nombre; purchases/deposits por `(fecha, parte entera del monto, descripción)`. **Las fechas son relativas al día del seed**: si se detectan movimientos de otro día el seed se detiene y pide `python scripts/seed.py --reset` (borra purchases/deposits y resiembra). **Correrlo la mañana del pitch**, seguido de `python scripts/sync.py <account_id>`.
+
+### Endpoints de lectura para la UI (nuevos)
+
+Todos `{"data", "meta"}`, `meta.currency = "MXN"`, fechas ISO, montos positivos + `direction: "in"|"out"`. `initial`/color del badge se derivan en el frontend (del nombre del merchant / la categoría).
+
+- `GET /accounts/{account_id}` → cuentas del customer (sidebar): `nickname, type, balance, account_number_masked ("•••• 8601"), is_current`.
+- `GET /transactions/{account_id}?limit=20&type=all|purchase|deposit` → purchases + deposits mezclados DESC: `id, type, direction, amount, date, merchant, category, description, status`. Los depósitos salen como merchant "Nómina - Maquilas del Norte SA de CV", categoría "Ingresos".
+- `GET /bills/{account_id}` → bills con `next_payment_date`, `days_until`, `category` (Vivienda / Servicios y facturas / Deuda); `meta.monthly_total`.
+- `GET /summary/{account_id}` extendido (compatible): agrega `account_number_masked, money_in, money_out, deposit_count, money_in_goal (12,282), bills_monthly_total`; `meta.period` = **ventana móvil de 30 días** (no mes calendario, porque el seed es relativo a hoy).
+- CreditWise no tiene fuente en Nessie → sigue estático en el frontend.
+
+Fixtures de los 5 endpoints en `/fixtures` (ver su README).
 
 ## Bugs/decisiones técnicas descubiertas (importante para el pitch/documentación)
 
@@ -66,6 +91,11 @@ Fuente citable: [ENIGH 2024, INEGI](https://www.inegi.org.mx/contenidos/saladepr
 5. **Gemini `gemini-2.5-flash` dejó de estar disponible para keys nuevas** a mitad de desarrollo (404, "no longer available to new users").
 6. **`gemini-3.6-flash` tiene un límite de cuota gratis de solo 20 requests/día** — se agotó durante las pruebas de este mismo día. Se cambió a **`gemini-flash-lite-latest`** (cuota separada, y es un alias que Google mantiene apuntando al modelo lite vigente, para no repetir el problema del punto 5).
 7. **El tier gratis de Gemini tiene fallos reales de disponibilidad** (429 cuota, 503 alta demanda, 504 timeout) — confirmado en vivo durante las pruebas, no es un escenario hipotético. El fallback, el timeout corto de 10s, y el cache de Fase 5 existen porque de verdad hacen falta.
+8. **Nessie devuelve los montos de purchases/deposits sin decimales** (se manda 348.60, el GET regresa 348). Por eso `app/demo_data.py` guarda los montos reales y `cache.sync_snapshot` los restaura al escribir en Postgres (`raw` conserva lo que dijo Nessie). Los cálculos y la UI usan los montos con centavos.
+9. **Deposits NO modifican `account.balance` en Nessie** (igual que las purchases): el balance es un número fijo que se setea al crear la cuenta. Verificado con un deposit de prueba antes de sembrar.
+10. **`GET /accounts/{id}/transfers` devuelve 404 cuando la lista está vacía** (`/deposits` devuelve `[]`). `nessie_client._get_list` convierte ese 404 en `[]`.
+11. **`thinking_config=ThinkingConfig(thinking_budget=0)` (PR #6) ya no lo acepta `gemini-flash-lite-latest`**: todas las llamadas daban `400 INVALID_ARGUMENT` y el forecast caía siempre al fallback. Se quitó el parámetro (2026-09-12); el plan real volvió a generarse. El alias apunta ahora a un modelo que no permite apagar el thinking.
+12. **Bug preexistente en `cache.py`**: si el sync fallaba dentro de un `get_*`, la conexión se devolvía al pool dos veces (`PoolError: trying to put unkeyed connection`) y tapaba el error real. Ahora `_ensure_snapshot` corre antes de tomar la conexión de lectura.
 
 ## Convenciones que se están respetando
 
@@ -76,11 +106,15 @@ Fuente citable: [ENIGH 2024, INEGI](https://www.inegi.org.mx/contenidos/saladepr
 
 ## Pendiente / próximo paso
 
-1. **Cerrar `perf/gemini-thinking-budget`**: confirmar que `thinking_budget=0` no rompe `scripts/test_agent.py`, medir la latencia real de la primera llamada (antes vs. después) y hacer commit/push/PR.
-2. El frontend (Paso 3 original) **todavía no está conectado a `/forecast`** — solo muestra `/summary` (balance + gasto total, sin IA). Conectar la UI al forecast + rescue plan es el siguiente "momento de valor" visual para el pitch.
-3. `/actions` (bloquear categoría, mover a ahorro) mencionado en la idea original y en `CLAUDE.md` **no está en BACKEND.md ni implementado todavía** — pendiente decidir si entra al alcance antes del pitch.
-4. Diseño real de frontend: sigue pendiente, el actual es solo funcional.
+1. ~~Cerrar `perf/gemini-thinking-budget`~~ → el `thinking_budget=0` se revirtió (ver bug 11); la rama ya no aplica.
+2. **Conectar el frontend a los endpoints reales**: hoy el dashboard renderiza 100 % `web/lib/mockData.ts` (los componentes `BalanceCard`/`ForecastCard` que sí llaman al backend no están montados). Mapeo: `recentTransactions` ← `/transactions?limit=7` · `upcomingTransactions` ← `/bills` · `balanceSummary` + sidebar ← `/accounts` · `spending` ← `/summary` (`money_in`, `money_in_goal`, `money_out`) · plan de rescate ← `/forecast`. Además cambiar los 4 helpers `currency()` de `en-US/USD` a `es-MX/MXN`, y derivar `initial` (primera letra del merchant) y `badgeColor` (por `category`) en el cliente.
+3. **Prompt del agente**: `get_purchases` ya devuelve `merchant_name` y `category`; `agent._build_prompt` todavía manda solo `description`. Cambiar a `"- {date}: {merchant_name} [{category}] (${amount})"` y agregar una línea con los ingresos de los últimos 30 días. Requiere `?force_refresh=true` y regenerar el fixture.
+4. **El forecaster ignora la nómina**: con los depósitos ahora visibles en la UI, un juez puede preguntar por qué la proyección no cuenta la siguiente quincena. Restarla mueve `days_remaining`; decidir antes del pitch.
+5. `/actions` (bloquear categoría, mover a ahorro) **no está implementado todavía**. Ya existe la base: cuenta Savings sembrada y `nessie_client.create_transfer` (Checking → Savings). CORS solo permite `GET`; habrá que abrir `POST`.
+6. Diseño real de frontend: sigue pendiente, el actual es solo funcional.
 
 ## Importante para el día del pitch
+
+**Resiembra relativo a hoy**: `python scripts/seed.py --reset && python scripts/sync.py 258f79f0-ff2e-49ca-b9f4-d658317e0168` (las fechas del dataset son relativas al día del seed; sin esto los días a la insolvencia van subiendo lentamente, 13 → 14 a los 5 días).
 
 **Calienta el cache antes de salir al escenario**: haz una sola llamada a `GET /forecast/{account_id}` (o abre el frontend una vez, cuando esté conectado) unos minutos antes de presentar. Eso guarda el plan de rescate en Postgres, y durante la demo en vivo la respuesta será de ~2 segundos en vez de 10-13. Si necesitas forzar un plan nuevo (por ejemplo, después de cambiar el prompt), usa `?force_refresh=true`.

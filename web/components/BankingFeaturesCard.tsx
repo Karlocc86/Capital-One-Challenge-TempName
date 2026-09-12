@@ -66,7 +66,7 @@ export default function BankingFeaturesCard() {
           <button
             key={feature.label}
             type="button"
-            className="flex flex-col items-center gap-2 rounded-xl border border-slate-100 p-3 text-center text-xs font-medium text-brand-700 transition-colors hover:bg-brand-50"
+            className="flex flex-col items-center gap-2 rounded-lg bg-slate-100 p-3 text-center text-xs font-medium text-brand-700 transition-colors hover:bg-brand-100"
           >
             {feature.icon}
             <span>{feature.label}</span>

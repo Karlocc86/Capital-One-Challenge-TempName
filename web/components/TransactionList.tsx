@@ -1,8 +1,17 @@
 import CardMenu from "@/components/CardMenu";
-import type { Transaction } from "@/lib/mockData";
+import type { BadgeColor, Transaction } from "@/lib/mockData";
 
-const currency = (value: number) =>
-  value.toLocaleString("en-US", { style: "currency", currency: "USD" });
+const amount = (value: number) =>
+  value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const badgeClasses: Record<BadgeColor, string> = {
+  emerald: "bg-emerald-500",
+  rose: "bg-rose-500",
+  red: "bg-red-600",
+  green: "bg-green-600",
+  sky: "bg-sky-500",
+  amber: "bg-amber-500",
+};
 
 type Props = {
   title: string;
@@ -23,7 +32,7 @@ export default function TransactionList({ title, transactions, showViewAll }: Pr
           <li key={tx.id} className="flex items-center justify-between gap-3 py-3">
             <div className="flex items-center gap-3">
               <span
-                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-base font-bold text-white ${tx.badgeColor}`}
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-base font-bold text-white ${badgeClasses[tx.badge]}`}
               >
                 {tx.initial}
               </span>
@@ -34,7 +43,7 @@ export default function TransactionList({ title, transactions, showViewAll }: Pr
             </div>
 
             <div className="text-right">
-              <p className="text-sm font-medium text-slate-800">{currency(tx.amount)}</p>
+              <p className="text-sm font-medium text-slate-800">{amount(tx.amount)}</p>
               <p className="text-xs text-slate-400">{tx.date}</p>
             </div>
           </li>

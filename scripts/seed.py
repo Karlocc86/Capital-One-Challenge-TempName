@@ -1,7 +1,12 @@
 """
-Siembra un customer demo, una account Checking, ~15 purchases de los últimos
-30 días y bills recurrentes. Idempotente: si ya existe el customer demo
-(buscado por nombre), reutiliza sus IDs en vez de duplicar.
+Siembra el "mundo" del usuario demo en Nessie: un customer, una cuenta
+Checking y una Savings, 8 merchants de Monterrey, 26 purchases fijas de los
+últimos 30 días, 2 depósitos de nómina (quincenas) y 3 bills recurrentes.
+
+El dataset es DETERMINISTA (nada de random): cada purchase tiene su comercio,
+monto y día relativo a hoy escritos a mano. Así el forecast siempre proyecta
+lo mismo (~13 días a la insolvencia) y la UI siempre muestra las mismas
+transacciones.
 
 Perfil demo: "Ricardo Torres", trabajador de ingreso medio-bajo en Monterrey.
 Los montos están calibrados con datos reales del INEGI (ENIGH 2024, decil
@@ -10,39 +15,43 @@ MXN/mes) — no son números arbitrarios, representan un perfil de vulnerabilida
 financiera real, incluyendo un pago recurrente a una casa de empeño/préstamo
 personal informal, justo el tipo de señal que el forecast debe detectar.
 
-Uso: python scripts/seed.py
+Idempotencia:
+- customer / accounts / merchants / bills: find-or-create por nombre.
+- purchases / deposits: se comparan por (fecha, monto, descripción) contra lo
+  que ya hay en Nessie y solo se crean las faltantes. Como las fechas son
+  relativas a hoy, si se detectan movimientos de una siembra de otro día el
+  script se detiene y pide correr con --reset.
+
+Uso:
+    python scripts/seed.py            # siembra (o completa) el dataset
+    python scripts/seed.py --reset    # borra purchases/deposits y resiembra
+                                      # relativo a hoy (correr la mañana del pitch)
 """
 
-import random
 import sys
-from datetime import datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import nessie_client as nc
+from app.demo_data import (
+    BILLS,
+    DEMO_CHECKING_BALANCE,
+    DEMO_CHECKING_NICKNAME,
+    DEMO_FIRST_NAME,
+    DEMO_LAST_NAME,
+    DEMO_SAVINGS_BALANCE,
+    DEMO_SAVINGS_NICKNAME,
+    DEPOSITS,
+    MERCHANTS,
+    PURCHASES,
+    movement_key,
+)
 
-DEMO_FIRST_NAME = "Ricardo"
-DEMO_LAST_NAME = "Torres"
-DEMO_ACCOUNT_NICKNAME = "Cuenta Principal"
-DEMO_MERCHANT_NAME = "Comercio Local Monterrey"
 
-# (descripción, monto mínimo, monto máximo) en MXN — proporciones inspiradas
-# en ENIGH 2024: alimentos ~38%, transporte ~19.5% del gasto de un hogar.
-PURCHASE_CATEGORIES = [
-    ("Abarrotes", 150.0, 450.0),
-    ("Abarrotes", 150.0, 450.0),
-    ("Transporte (camión urbano)", 20.0, 45.0),
-    ("Transporte (camión urbano)", 20.0, 45.0),
-    ("Transporte (camión urbano)", 20.0, 45.0),
-    ("Gasolina", 200.0, 400.0),
-    ("Comida en la calle (tacos, comida corrida)", 40.0, 90.0),
-    ("Comida en la calle (tacos, comida corrida)", 40.0, 90.0),
-    ("Comida en la calle (tacos, comida corrida)", 40.0, 90.0),
-    ("Recarga celular", 100.0, 200.0),
-    ("Farmacia", 80.0, 250.0),
-    ("Ropa", 200.0, 500.0),
-]
+def _date_str(days_ago: int) -> str:
+    return (date.today() - timedelta(days=days_ago)).strftime("%Y-%m-%d")
 
 
 def find_or_create_customer() -> dict:
@@ -61,123 +70,188 @@ def find_or_create_customer() -> dict:
     return customer
 
 
-def find_or_create_account(customer_id: str) -> dict:
+def find_or_create_account(customer_id: str, account_type: str, nickname: str, balance: float) -> dict:
     accounts = nc.get_accounts_for_customer(customer_id)
     for account in accounts:
-        if account.get("nickname") == DEMO_ACCOUNT_NICKNAME and account.get("type") == "Checking":
-            print(f"[seed] Account demo ya existe: {account['_id']}")
+        if account.get("nickname") == nickname and account.get("type") == account_type:
+            print(f"[seed] Account '{nickname}' ya existe: {account['_id']}")
             return account
 
     result = nc.create_account(
         customer_id=customer_id,
-        account_type="Checking",
-        nickname=DEMO_ACCOUNT_NICKNAME,
-        balance=3200.00,
+        account_type=account_type,
+        nickname=nickname,
+        balance=balance,
     )
     account = result["objectCreated"]
-    print(f"[seed] Account demo creada: {account['_id']}")
+    print(f"[seed] Account '{nickname}' ({account_type}) creada: {account['_id']}")
     return account
 
 
-def find_or_create_merchant() -> dict:
-    merchants = nc.get_merchants()
-    for merchant in merchants:
-        if merchant.get("name") == DEMO_MERCHANT_NAME:
-            print(f"[seed] Merchant demo ya existe: {merchant['_id']}")
-            return merchant
-
-    result = nc.create_merchant(
-        name=DEMO_MERCHANT_NAME,
-        category="food",
-        address={
-            "street_number": "123",
-            "street_name": "Av HackMTY",
-            "city": "Monterrey",
-            "state": "NL",
-            "zip": "64000",
-        },
-    )
-    merchant = result["objectCreated"]
-    print(f"[seed] Merchant demo creado: {merchant['_id']}")
-    return merchant
+def find_or_create_merchants() -> dict[str, dict]:
+    """Devuelve {nombre: merchant}. Los merchants en Nessie son por API key, no hay colisión con otros equipos."""
+    existing = {m.get("name"): m for m in nc.get_merchants()}
+    merchants: dict[str, dict] = {}
+    for spec in MERCHANTS:
+        if spec["name"] in existing:
+            merchants[spec["name"]] = existing[spec["name"]]
+            continue
+        result = nc.create_merchant(
+            name=spec["name"],
+            category=spec["category"],
+            address=spec["address"],
+        )
+        merchants[spec["name"]] = result["objectCreated"]
+        print(f"[seed] Merchant '{spec['name']}' creado: {merchants[spec['name']]['_id']}")
+    print(f"[seed] Merchants listos: {len(merchants)}")
+    return merchants
 
 
-def seed_purchases(account_id: str, merchant_id: str) -> None:
+def _key(date_str: str, amount: float, description: str) -> tuple:
+    # Nessie devuelve los montos sin decimales (348.60 → 348); se compara la
+    # parte entera para no duplicar movimientos (ver app/demo_data.py).
+    return (date_str, *movement_key(amount, description))
+
+
+def seed_purchases(account_id: str, merchants: dict[str, dict]) -> None:
     existing = nc.get_purchases_for_account(account_id)
-    if existing:
-        print(f"[seed] Ya hay {len(existing)} purchases, no se siembran más.")
+    existing_keys = {_key(p["purchase_date"], p["amount"], p.get("description", "")) for p in existing}
+    expected = {
+        _key(_date_str(days_ago), amount, description): (merchant_name, days_ago)
+        for days_ago, merchant_name, amount, description in PURCHASES
+    }
+
+    stale = existing_keys - set(expected)
+    if stale:
+        print(
+            f"[seed] Purchases de otra siembra detectadas ({len(stale)}); las fechas ya no "
+            "coinciden con hoy. Corre: python scripts/seed.py --reset"
+        )
         return
 
-    today = datetime.now()
-    for i in range(15):
-        days_ago = random.randint(0, 29)
-        purchase_date = (today - timedelta(days=days_ago)).strftime("%Y-%m-%d")
-        description, min_amount, max_amount = random.choice(PURCHASE_CATEGORIES)
-        amount = round(random.uniform(min_amount, max_amount), 2)
+    missing = [k for k in expected if k not in existing_keys]
+    if not missing:
+        print(f"[seed] Purchases ya sembradas ({len(existing)}), nada que crear.")
+        return
 
+    for i, key in enumerate(missing, start=1):
+        purchase_date, amount, description = key
+        merchant_name, _ = expected[key]
         nc.create_purchase(
             account_id=account_id,
-            merchant_id=merchant_id,
+            merchant_id=merchants[merchant_name]["_id"],
             medium="balance",
             purchase_date=purchase_date,
             amount=amount,
             description=description,
             status="completed",
         )
-        print(f"[seed] Purchase {i + 1}/15 creada: {description} ${amount} ({purchase_date})")
+        print(f"[seed] Purchase {i}/{len(missing)}: {merchant_name} ${amount:.2f} ({purchase_date}) - {description}")
+
+
+def seed_deposits(account_id: str) -> None:
+    existing = nc.get_deposits_for_account(account_id)
+    existing_keys = {_key(d["transaction_date"], d["amount"], d.get("description", "")) for d in existing}
+    expected = {_key(_date_str(days_ago), amount, description) for days_ago, amount, description in DEPOSITS}
+
+    stale = existing_keys - expected
+    if stale:
+        print(
+            f"[seed] Deposits de otra siembra detectados ({len(stale)}). "
+            "Corre: python scripts/seed.py --reset"
+        )
+        return
+
+    missing = [k for k in expected if k not in existing_keys]
+    if not missing:
+        print(f"[seed] Deposits ya sembrados ({len(existing)}), nada que crear.")
+        return
+
+    for transaction_date, amount, description in sorted(missing):
+        nc.create_deposit(
+            account_id=account_id,
+            amount=amount,
+            transaction_date=transaction_date,
+            description=description,
+        )
+        print(f"[seed] Deposit: ${amount:.2f} ({transaction_date}) - {description}")
 
 
 def seed_bills(account_id: str) -> None:
-    existing = nc.get_bills_for_account(account_id)
-    if existing:
-        print(f"[seed] Ya hay {len(existing)} bills, no se siembran más.")
-        return
-
-    today_str = datetime.now().strftime("%Y-%m-%d")
-
-    nc.create_bill(
-        account_id=account_id,
-        status="recurring",
-        payee="Renta Departamento",
-        nickname="Renta",
-        payment_date=today_str,
-        recurring_date=1,
-        payment_amount=3500.00,
-    )
-    print("[seed] Bill 'Renta' creada.")
-
-    nc.create_bill(
-        account_id=account_id,
-        status="recurring",
-        payee="CFE e Internet",
-        nickname="Servicios",
-        payment_date=today_str,
-        recurring_date=15,
-        payment_amount=450.00,
-    )
-    print("[seed] Bill 'Servicios' creada.")
-
-    nc.create_bill(
-        account_id=account_id,
-        status="recurring",
-        payee="Casa de Empeño - Préstamo Personal",
-        nickname="Préstamo",
-        payment_date=today_str,
-        recurring_date=10,
-        payment_amount=800.00,
-    )
-    print("[seed] Bill 'Préstamo' creada (señal de vulnerabilidad financiera).")
+    existing = {b.get("nickname") for b in nc.get_bills_for_account(account_id)}
+    today_str = _date_str(0)
+    for nickname, payee, amount, recurring_date in BILLS:
+        if nickname in existing:
+            print(f"[seed] Bill '{nickname}' ya existe.")
+            continue
+        nc.create_bill(
+            account_id=account_id,
+            status="recurring",
+            payee=payee,
+            nickname=nickname,
+            payment_date=today_str,
+            recurring_date=recurring_date,
+            payment_amount=amount,
+        )
+        print(f"[seed] Bill '{nickname}' creada: ${amount:.2f} el día {recurring_date}.")
 
 
-def run() -> dict:
+def reset_movements(account_id: str) -> None:
+    """Borra purchases y deposits de la cuenta para resembrar relativo a hoy. Las bills no dependen de la fecha."""
+    purchases = nc.get_purchases_for_account(account_id)
+    deposits = nc.get_deposits_for_account(account_id)
+    for p in purchases:
+        nc.delete_purchase(p["_id"])
+    for d in deposits:
+        nc.delete_deposit(d["_id"])
+    print(f"[seed] --reset: {len(purchases)} purchases y {len(deposits)} deposits borrados.")
+
+
+def run(reset: bool = False) -> dict:
     customer = find_or_create_customer()
-    account = find_or_create_account(customer["_id"])
-    merchant = find_or_create_merchant()
-    seed_purchases(account["_id"], merchant["_id"])
-    seed_bills(account["_id"])
-    return {"customer": customer, "account": account, "merchant": merchant}
+    checking = find_or_create_account(customer["_id"], "Checking", DEMO_CHECKING_NICKNAME, DEMO_CHECKING_BALANCE)
+    savings = find_or_create_account(customer["_id"], "Savings", DEMO_SAVINGS_NICKNAME, DEMO_SAVINGS_BALANCE)
+    merchants = find_or_create_merchants()
+
+    if reset:
+        reset_movements(checking["_id"])
+
+    seed_purchases(checking["_id"], merchants)
+    seed_deposits(checking["_id"])
+    seed_bills(checking["_id"])
+
+    # "account" y "merchant" se mantienen por compatibilidad con test_connection.py
+    return {
+        "customer": customer,
+        "account": checking,
+        "savings": savings,
+        "merchant": next(iter(merchants.values())),
+        "merchants": merchants,
+    }
+
+
+def _print_summary(seeded: dict) -> None:
+    checking = nc.get_account(seeded["account"]["_id"])
+    savings = nc.get_account(seeded["savings"]["_id"])
+    purchases = nc.get_purchases_for_account(checking["_id"])
+    deposits = nc.get_deposits_for_account(checking["_id"])
+    bills = nc.get_bills_for_account(checking["_id"])
+    number = str(checking.get("account_number", ""))
+
+    print("\n=== SEED LISTO ===")
+    print(f"Customer : {seeded['customer']['_id']}")
+    print(f"Checking : {checking['_id']}  ('{checking['nickname']}' •••• {number[-4:]}, balance ${checking['balance']})")
+    print(f"Savings  : {savings['_id']}  ('{savings['nickname']}', balance ${savings['balance']})")
+    print(f"Merchants: {len(seeded['merchants'])}")
+    print(f"Purchases: {len(purchases)} (total ${sum(p['amount'] for p in purchases):.2f})")
+    print(f"Deposits : {len(deposits)} (total ${sum(d['amount'] for d in deposits):.2f})")
+    print(f"Bills    : {len(bills)}")
+    print("\nSiguientes pasos:")
+    print(f"  1) DEMO_ACCOUNT_ID={checking['_id']} en .env  y  NEXT_PUBLIC_DEMO_ACCOUNT_ID={checking['_id']} en web/.env.local")
+    print(f"  2) python scripts/init_db.py && python scripts/sync.py {checking['_id']}")
+    print(f"  3) curl http://localhost:8000/summary/{checking['_id']}")
 
 
 if __name__ == "__main__":
-    run()
-    print("[seed] Listo.")
+    seeded = run(reset="--reset" in sys.argv)
+    _print_summary(seeded)

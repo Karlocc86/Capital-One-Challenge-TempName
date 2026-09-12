@@ -60,7 +60,7 @@ python scripts/test_connection.py
 
 ## Orden de construcción (walking skeleton primero, siempre)
 
-1. nessie_client.py + scripts/seed.py (1 customer, 1 account, ~15 purchases, 2-3 bills)
+1. nessie_client.py + scripts/seed.py (1 customer, 2 accounts [Checking + Savings], 8 merchants, 26 purchases, 2 deposits, 3 bills — dataset fijo en app/demo_data.py)
 2. Endpoint /summary/{account_id} que regresa balance + gasto total (SIN IA todavía)
 3. Frontend mínimo que muestre ese número real
 4. Recién ahí: /forecast (regresión) y /insights (LLM) para el "momento de valor"

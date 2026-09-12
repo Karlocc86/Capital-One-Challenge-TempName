@@ -1,6 +1,7 @@
 """
 Crea (si no existen) las tablas de cache en Postgres: accounts_cache,
-purchases_cache, bills_cache. Idempotente.
+purchases_cache, bills_cache, rescue_plans_cache, merchants_cache,
+deposits_cache. Idempotente.
 
 Uso: python scripts/init_db.py
 """
@@ -53,6 +54,34 @@ CREATE TABLE IF NOT EXISTS rescue_plans_cache (
     plan JSONB NOT NULL,
     generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- La categoría de una purchase se resuelve con JOIN a merchants_cache (la
+-- `category` del merchant en Nessie es la etiqueta que pinta la UI). Sin FK
+-- desde purchases_cache.merchant_id a propósito: el orden del sync no debe
+-- poder romper el upsert.
+CREATE TABLE IF NOT EXISTS merchants_cache (
+    merchant_id TEXT PRIMARY KEY,
+    name TEXT,
+    category TEXT,
+    raw JSONB,
+    synced_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS deposits_cache (
+    deposit_id TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL REFERENCES accounts_cache(account_id),
+    amount NUMERIC,
+    transaction_date DATE,
+    description TEXT,
+    status TEXT,
+    raw JSONB,
+    synced_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS purchases_cache_account_date_idx
+    ON purchases_cache (account_id, purchase_date DESC);
+CREATE INDEX IF NOT EXISTS deposits_cache_account_date_idx
+    ON deposits_cache (account_id, transaction_date DESC);
 """
 
 
@@ -64,7 +93,10 @@ def run() -> None:
         conn.commit()
     finally:
         release_connection(conn)
-    print("[init_db] Tablas listas: accounts_cache, purchases_cache, bills_cache")
+    print(
+        "[init_db] Tablas listas: accounts_cache, purchases_cache, bills_cache, "
+        "rescue_plans_cache, merchants_cache, deposits_cache"
+    )
 
 
 if __name__ == "__main__":

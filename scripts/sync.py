@@ -17,15 +17,29 @@ def count_rows(account_id: str) -> dict:
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT count(*) FROM accounts_cache WHERE account_id = %s", (account_id,))
+            cur.execute(
+                "SELECT count(*) FROM accounts_cache WHERE customer_id = "
+                "(SELECT customer_id FROM accounts_cache WHERE account_id = %s)",
+                (account_id,),
+            )
             accounts = cur.fetchone()[0]
             cur.execute("SELECT count(*) FROM purchases_cache WHERE account_id = %s", (account_id,))
             purchases = cur.fetchone()[0]
+            cur.execute("SELECT count(*) FROM deposits_cache WHERE account_id = %s", (account_id,))
+            deposits = cur.fetchone()[0]
             cur.execute("SELECT count(*) FROM bills_cache WHERE account_id = %s", (account_id,))
             bills = cur.fetchone()[0]
+            cur.execute("SELECT count(*) FROM merchants_cache")
+            merchants = cur.fetchone()[0]
     finally:
         release_connection(conn)
-    return {"accounts": accounts, "purchases": purchases, "bills": bills}
+    return {
+        "accounts": accounts,
+        "purchases": purchases,
+        "deposits": deposits,
+        "bills": bills,
+        "merchants": merchants,
+    }
 
 
 def main() -> None:
@@ -39,8 +53,9 @@ def main() -> None:
 
     counts = count_rows(account_id)
     print(
-        f"[sync] Listo: {counts['accounts']} account, "
-        f"{counts['purchases']} purchases, {counts['bills']} bills"
+        f"[sync] Listo: {counts['accounts']} accounts del customer, "
+        f"{counts['purchases']} purchases, {counts['deposits']} deposits, "
+        f"{counts['bills']} bills, {counts['merchants']} merchants"
     )
 
 

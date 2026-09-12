@@ -11,9 +11,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from app.config import DEMO_ACCOUNT_ID as _ENV_ACCOUNT_ID
 from app.forecaster import FinancialForecaster
 
-DEMO_ACCOUNT_ID = "e8f0c102-eb26-4baf-ad78-629cc03c4d74"
+DEMO_ACCOUNT_ID = _ENV_ACCOUNT_ID or "258f79f0-ff2e-49ca-b9f4-d658317e0168"
 
 
 def case_datos_normales() -> None:
@@ -26,6 +27,12 @@ def case_datos_normales() -> None:
     forecaster = FinancialForecaster(account["balance"], purchases, bills)
     result = forecaster.calculate_forecast()
     print(f"[caso a: datos normales] {result}")
+    # El dataset demo (app/demo_data.py) está calibrado para ~13 días; si esto
+    # falla, el seed o el sync están sirviendo datos distintos a los esperados.
+    assert result.days_remaining is not None and 10 <= result.days_remaining <= 16, (
+        f"days_remaining={result.days_remaining}, se esperaba entre 10 y 16 "
+        "(¿corriste seed.py --reset y sync.py hoy?)"
+    )
 
 
 def case_un_solo_dato() -> None:

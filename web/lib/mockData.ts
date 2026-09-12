@@ -1,3 +1,5 @@
+export type BadgeColor = "emerald" | "rose" | "red" | "green" | "sky" | "amber";
+
 export type Transaction = {
   id: string;
   merchant: string;
@@ -5,7 +7,7 @@ export type Transaction = {
   amount: number;
   date: string;
   initial: string;
-  badgeColor: string;
+  badge: BadgeColor;
 };
 
 export const recentTransactions: Transaction[] = [
@@ -16,7 +18,7 @@ export const recentTransactions: Transaction[] = [
     amount: -18.98,
     date: "10 nov",
     initial: "S",
-    badgeColor: "bg-emerald-500",
+    badge: "emerald",
   },
   {
     id: "chick-fil-a",
@@ -25,7 +27,7 @@ export const recentTransactions: Transaction[] = [
     amount: -20.4,
     date: "8 nov",
     initial: "C",
-    badgeColor: "bg-rose-500",
+    badge: "rose",
   },
   {
     id: "netflix",
@@ -34,7 +36,7 @@ export const recentTransactions: Transaction[] = [
     amount: -9.96,
     date: "6 nov",
     initial: "N",
-    badgeColor: "bg-red-600",
+    badge: "red",
   },
   {
     id: "hulu",
@@ -43,7 +45,7 @@ export const recentTransactions: Transaction[] = [
     amount: -8.98,
     date: "4 nov",
     initial: "H",
-    badgeColor: "bg-green-600",
+    badge: "green",
   },
   {
     id: "walmart",
@@ -52,7 +54,7 @@ export const recentTransactions: Transaction[] = [
     amount: -40.24,
     date: "3 nov",
     initial: "W",
-    badgeColor: "bg-sky-500",
+    badge: "sky",
   },
   {
     id: "mcdonalds",
@@ -61,7 +63,7 @@ export const recentTransactions: Transaction[] = [
     amount: -10.4,
     date: "31 oct",
     initial: "M",
-    badgeColor: "bg-amber-500",
+    badge: "amber",
   },
   {
     id: "exxon",
@@ -70,7 +72,7 @@ export const recentTransactions: Transaction[] = [
     amount: -40.0,
     date: "29 oct",
     initial: "E",
-    badgeColor: "bg-red-500",
+    badge: "red",
   },
 ];
 
@@ -82,7 +84,7 @@ export const upcomingTransactions: Transaction[] = [
     amount: -120.3,
     date: "16 nov",
     initial: "W",
-    badgeColor: "bg-sky-500",
+    badge: "sky",
   },
   {
     id: "chick-fil-a-upcoming",
@@ -91,7 +93,7 @@ export const upcomingTransactions: Transaction[] = [
     amount: -8.2,
     date: "14 nov",
     initial: "C",
-    badgeColor: "bg-rose-500",
+    badge: "rose",
   },
   {
     id: "exxon-upcoming",
@@ -100,7 +102,7 @@ export const upcomingTransactions: Transaction[] = [
     amount: -40.0,
     date: "11 nov",
     initial: "E",
-    badgeColor: "bg-red-500",
+    badge: "red",
   },
   {
     id: "mcdonalds-upcoming",
@@ -109,7 +111,7 @@ export const upcomingTransactions: Transaction[] = [
     amount: -6.3,
     date: "11 nov",
     initial: "M",
-    badgeColor: "bg-amber-500",
+    badge: "amber",
   },
 ];
 

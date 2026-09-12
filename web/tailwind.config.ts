@@ -19,6 +19,8 @@ const config: Config = {
           600: "#1f3a5f",
           700: "#17304f",
           900: "#0c1a2e",
+          sidebar: "#0e2a42",
+          canvas: "#123f63",
         },
         accent: {
           DEFAULT: "#c8102e",

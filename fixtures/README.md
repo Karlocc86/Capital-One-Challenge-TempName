@@ -1,28 +1,43 @@
 # Fixtures — respaldo para la demo
 
-`forecast_ricardo_torres_backup.json` es una respuesta **real** de `GET /forecast/{account_id}` para el usuario demo (Ricardo Torres, `e8f0c102-eb26-4baf-ad78-629cc03c4d74`), capturada y verificada — no es un mock inventado.
+Respuestas **reales** de la API para el usuario demo (Ricardo Torres, account `258f79f0-ff2e-49ca-b9f4-d658317e0168`), capturadas y verificadas — no son mocks inventados.
 
-## Cuándo usarlo
+| Archivo | Endpoint | Qué alimenta en la UI |
+|---|---|---|
+| `forecast_ricardo_torres_backup.json` | `GET /forecast/{account_id}` | Días a la insolvencia + plan de rescate (Gemini) |
+| `summary_ricardo_torres.json` | `GET /summary/{account_id}` | Saldo, `money_in`/`money_out` (barras de Gastos) |
+| `transactions_ricardo_torres.json` | `GET /transactions/{account_id}?limit=20` | Transacciones recientes (compras + nómina) |
+| `bills_ricardo_torres.json` | `GET /bills/{account_id}` | Próximas transacciones (bills con `next_payment_date`) |
+| `accounts_ricardo_torres.json` | `GET /accounts/{account_id}` | Sidebar (Cheques + Ahorro, número enmascarado) |
 
-Último recurso si algo truena en vivo durante el pitch (Nessie, Supabase o Gemini caídos al mismo tiempo, sin internet, etc.). **No lo uses si el endpoint real funciona** — siempre es mejor mostrar el dato en vivo.
+Todos van envueltos en `{"data": ..., "meta": {...}}`, con `meta.currency = "MXN"`, fechas ISO (`YYYY-MM-DD`) y montos positivos + `direction: "in" | "out"`.
 
-## Cómo usarlo en una emergencia
+## Cuándo usarlos
 
-Si necesitas servirlo manualmente en vez del endpoint real, la forma más rápida es correr esto en tu máquina antes del pitch (deja un servidor HTTP simple sirviendo el JSON):
+Último recurso si algo truena en vivo durante el pitch (Nessie, Supabase o Gemini caídos al mismo tiempo, sin internet, etc.). **No los uses si el endpoint real funciona** — siempre es mejor mostrar el dato en vivo.
+
+## Cómo usarlos en una emergencia
+
+Servirlos manualmente en vez del endpoint real (deja un servidor HTTP simple sirviendo los JSON):
 
 ```bash
 cd fixtures
 python -m http.server 8001
-# luego apunta el frontend a http://localhost:8001/forecast_ricardo_torres_backup.json
-# en vez de http://localhost:8000/forecast/{account_id}
+# luego apunta el frontend a http://localhost:8001/<archivo>.json
+# en vez de http://localhost:8000/<endpoint>/{account_id}
 ```
 
-O simplemente ábrelo y copia/pega el JSON si el frontend permite un modo "datos de ejemplo" hardcodeado.
+## Cómo regenerarlos
 
-## Cómo regenerar este archivo
-
-Con el backend corriendo y Nessie/Postgres/Gemini sanos:
+Con el backend corriendo y Nessie/Postgres/Gemini sanos (las fechas de las transacciones son relativas al día del seed: si pasaron días, corre antes `python scripts/seed.py --reset` y `python scripts/sync.py <account_id>`):
 
 ```bash
-curl -s http://localhost:8000/forecast/e8f0c102-eb26-4baf-ad78-629cc03c4d74 -o fixtures/forecast_ricardo_torres_backup.json
+ID=258f79f0-ff2e-49ca-b9f4-d658317e0168
+curl -s "http://localhost:8000/forecast/$ID?force_refresh=true" -o fixtures/forecast_ricardo_torres_backup.json
+curl -s "http://localhost:8000/summary/$ID"                     -o fixtures/summary_ricardo_torres.json
+curl -s "http://localhost:8000/transactions/$ID?limit=20"       -o fixtures/transactions_ricardo_torres.json
+curl -s "http://localhost:8000/bills/$ID"                       -o fixtures/bills_ricardo_torres.json
+curl -s "http://localhost:8000/accounts/$ID"                    -o fixtures/accounts_ricardo_torres.json
 ```
+
+Revisa que el forecast traiga un plan real de Gemini: si `rescue_plan.summary` empieza con "No pudimos generar…", es el fallback — repite con `?force_refresh=true`.

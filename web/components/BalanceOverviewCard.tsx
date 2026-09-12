@@ -6,14 +6,16 @@ const currency = (value: number) =>
 
 export default function BalanceOverviewCard() {
   return (
-    <div className="rounded-2xl bg-white p-6 shadow-card">
-      <div className="flex items-start justify-between">
-        <h2 className="text-sm font-semibold text-slate-500">Mi Balance</h2>
-        <CardMenu />
-      </div>
+    <div className="flex flex-1 flex-col justify-between rounded-2xl bg-white p-6 shadow-card">
+      <div>
+        <div className="flex items-start justify-between">
+          <h2 className="text-sm font-semibold text-slate-500">Mi Balance</h2>
+          <CardMenu />
+        </div>
 
-      <p className="mt-2 text-4xl font-bold text-brand-900">{currency(balanceSummary.balance)}</p>
-      <p className="text-sm text-slate-500">Saldo disponible</p>
+        <p className="mt-2 text-4xl font-bold text-brand-900">{currency(balanceSummary.balance)}</p>
+        <p className="text-sm text-slate-500">Saldo disponible</p>
+      </div>
 
       <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4 text-sm">
         <span className="text-slate-500">

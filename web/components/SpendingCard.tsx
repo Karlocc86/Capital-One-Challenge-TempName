@@ -18,7 +18,8 @@ export default function SpendingCard() {
       <div className="mt-4 space-y-4">
         <div>
           <p className="text-sm text-slate-600">
-            Ingresos {currency(spending.moneyIn)} de {currency(spending.moneyInGoal)}
+            Ingresos <span className="font-semibold text-slate-900">{currency(spending.moneyIn)}</span> de{" "}
+            {currency(spending.moneyInGoal)}
           </p>
           <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
             <div className="h-full rounded-full bg-green-500" style={{ width: `${inPct}%` }} />
@@ -26,7 +27,9 @@ export default function SpendingCard() {
         </div>
 
         <div>
-          <p className="text-sm text-slate-600">Egresos {currency(spending.moneyOut)}</p>
+          <p className="text-sm text-slate-600">
+            Egresos <span className="font-semibold text-slate-900">{currency(spending.moneyOut)}</span>
+          </p>
           <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
             <div className="h-full rounded-full bg-blue-500" style={{ width: `${outPct}%` }} />
           </div>

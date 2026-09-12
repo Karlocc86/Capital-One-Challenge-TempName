@@ -49,10 +49,10 @@ class CognitiveFinancialAgent:
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=FinancialRescuePlan,
-                    # Los modelos 2.5 razonan ("thinking") antes de responder por
-                    # default, lo que agrega latencia sin aportar al output
-                    # estructurado que ya pedimos. flash-lite permite apagarlo.
-                    thinking_config=types.ThinkingConfig(thinking_budget=0),
+                    # Antes se mandaba thinking_config=ThinkingConfig(thinking_budget=0)
+                    # para bajar latencia, pero el modelo al que apunta hoy
+                    # `gemini-flash-lite-latest` responde 400 INVALID_ARGUMENT
+                    # con ese parámetro (verificado 2026-09-12). Sin él funciona.
                 ),
             )
             return response.parsed, True

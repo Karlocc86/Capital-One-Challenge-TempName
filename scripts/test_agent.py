@@ -1,7 +1,7 @@
 """
 Checkpoint 3 de BACKEND.md: llama a CognitiveFinancialAgent con el forecast
 de los 3 casos del Checkpoint 2 y confirma que siempre regresa un
-FinancialRescuePlan válido, incluso en el caso "sin datos" y cuando Claude
+FinancialRescuePlan válido, incluso en el caso "sin datos" y cuando Gemini
 falla (key inválida).
 
 Uso: python scripts/test_agent.py
@@ -14,9 +14,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.agent import CognitiveFinancialAgent
+from app.config import DEMO_ACCOUNT_ID as _ENV_ACCOUNT_ID
 from app.forecaster import FinancialForecaster
 
-DEMO_ACCOUNT_ID = "e8f0c102-eb26-4baf-ad78-629cc03c4d74"
+DEMO_ACCOUNT_ID = _ENV_ACCOUNT_ID or "258f79f0-ff2e-49ca-b9f4-d658317e0168"
 
 
 async def case_datos_normales(agent: CognitiveFinancialAgent) -> None:
