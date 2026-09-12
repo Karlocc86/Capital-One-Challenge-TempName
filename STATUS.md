@@ -1,6 +1,6 @@
 # Estado del proyecto — Capital One Challenge, HackMTY 2026
 
-_Última actualización: 12 de septiembre de 2026_
+_Última actualización: 12 de septiembre de 2026 (rama `perf/gemini-thinking-budget`, pendiente de commit)_
 
 ## Qué estamos construyendo
 
@@ -36,6 +36,7 @@ Reglas duras que se mantienen: el frontend nunca llama a Nessie directamente; `n
 - `app/agent.py`: Structured Outputs (`response_schema=FinancialRescuePlan`) contra Gemini. `generate_rescue_plan` regresa `(plan, exito)` — `exito=False` cuando se usó el plan de respaldo, para que el llamador nunca cachee un fallback.
 - Se descubrió que el tier gratis de Gemini **sí falla con cierta frecuencia** (503 "alta demanda", 504 timeout, y hasta un 429 de cuota diaria agotada) — se configuró `attempts=1` + `timeout=10s` en el cliente para fallar rápido al respaldo en vez de esperar ~30s de reintentos por default del SDK.
 - Checkpoint 3: los 3 casos de Fase 2 + un 4to caso con key inválida — los 4 devuelven un `FinancialRescuePlan` válido (`scripts/test_agent.py`).
+- **En curso (rama `perf/gemini-thinking-budget`, sin commitear)**: se agregó `thinking_config=types.ThinkingConfig(thinking_budget=0)` en `agent.py`. Los modelos 2.5 de Gemini razonan ("thinking") antes de responder por default, lo cual suma latencia sin aportar nada al output ya forzado por `response_schema`; `flash-lite` permite desactivarlo. Objetivo: recortar los ~10-13s de la primera llamada (ver Fase 5). Falta medir el impacto real y correr `scripts/test_agent.py` con el cambio antes de dar por cerrado.
 
 **Fase 4 — Orquestador `/forecast/{account_id}`, DONE**
 - Pipeline completo en `app/main.py`: ingesta (cache) → cuantitativa → cognitiva → respuesta envuelta. Try/except: errores de Nessie → 404, cualquier otra falla → 500 genérico. Logs por etapa.
@@ -75,9 +76,10 @@ Fuente citable: [ENIGH 2024, INEGI](https://www.inegi.org.mx/contenidos/saladepr
 
 ## Pendiente / próximo paso
 
-- El frontend (Paso 3 original) **todavía no está conectado a `/forecast`** — solo muestra `/summary` (balance + gasto total, sin IA). Conectar la UI al forecast + rescue plan es el siguiente "momento de valor" visual para el pitch.
-- `/actions` (bloquear categoría, mover a ahorro) mencionado en la idea original y en `CLAUDE.md` **no está en BACKEND.md ni implementado todavía** — pendiente decidir si entra al alcance antes del pitch.
-- Diseño real de frontend: sigue pendiente, el actual es solo funcional.
+1. **Cerrar `perf/gemini-thinking-budget`**: confirmar que `thinking_budget=0` no rompe `scripts/test_agent.py`, medir la latencia real de la primera llamada (antes vs. después) y hacer commit/push/PR.
+2. El frontend (Paso 3 original) **todavía no está conectado a `/forecast`** — solo muestra `/summary` (balance + gasto total, sin IA). Conectar la UI al forecast + rescue plan es el siguiente "momento de valor" visual para el pitch.
+3. `/actions` (bloquear categoría, mover a ahorro) mencionado en la idea original y en `CLAUDE.md` **no está en BACKEND.md ni implementado todavía** — pendiente decidir si entra al alcance antes del pitch.
+4. Diseño real de frontend: sigue pendiente, el actual es solo funcional.
 
 ## Importante para el día del pitch
 
