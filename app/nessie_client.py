@@ -19,6 +19,10 @@ class NessieError(Exception):
         )
 
 
+# Helper interno usado por todas las funciones de abajo: arma la URL, mete
+# la API key como query param "key" (así es como Nessie exige auth, no headers),
+# y hace la request. Todo lo público en este módulo es una envoltura delgada
+# sobre esta función.
 def _request(
     method: str,
     path: str,
@@ -42,12 +46,16 @@ def _request(
     ):
         return []
 
+    # Cualquier 4xx/5xx se convierte en NessieError (ver clase arriba) en vez
+    # de dejar que httpx tire su propia excepción; así el caller (ej. main.py)
+    # puede capturar un solo tipo de error para toda la API de Nessie.
     if response.status_code >= 400:
         print(f"[NESSIE ERROR] {method} {url}")
         print(f"[NESSIE ERROR] status_code={response.status_code}")
         print(f"[NESSIE ERROR] body={response.text}")
         raise NessieError(method, url, response.status_code, response.text)
 
+    # Algunos endpoints (ej. DELETE) responden 200 con body vacío.
     if not response.text:
         return {}
 
@@ -59,6 +67,8 @@ def _get_list(path: str) -> list[dict]:
 
 
 # ---------- Customers ----------
+# Un customer es la persona dueña de las accounts. Nessie no da mucho más
+# que nombre; todo lo demás (accounts, purchases, etc.) cuelga de su _id.
 
 def create_customer(first_name: str, last_name: str) -> dict:
     payload = {"first_name": first_name, "last_name": last_name}
@@ -96,6 +106,7 @@ def get_accounts_for_customer(customer_id: str) -> list[dict]:
     return _request("GET", f"/customers/{customer_id}/accounts")
 
 
+# Este es el que usa main.py en /summary/{account_id} — trae balance actual.
 def get_account(account_id: str) -> dict:
     return _request("GET", f"/accounts/{account_id}")
 
@@ -105,6 +116,8 @@ def delete_account(account_id: str) -> dict:
 
 
 # ---------- Purchases ----------
+# Purchases = transacciones de gasto de una account. main.py suma su "amount"
+# para calcular total_spent en /summary.
 
 def create_purchase(
     account_id: str,
@@ -251,3 +264,40 @@ def create_merchant(name: str, category: str, address: dict, geocode: dict | Non
     if geocode:
         payload["geocode"] = geocode
     return _request("POST", "/merchants", json=payload)
+
+
+# ---------- Loans ----------
+# Agregado por Samuel: soporte pa préstamos, usado por la pantalla "Préstamos"
+# del frontend. Nessie los cuelga de una account (no del customer directo),
+# por eso get_loans_for_account pide account_id y no customer_id.
+
+def create_loan(
+    account_id: str,
+    loan_type: str,
+    amount: float,
+    monthly_payment: float,
+    credit_score: int,
+    status: str = "pending",
+    description: str = "",
+) -> dict:
+    payload = {
+        "type": loan_type,
+        "amount": amount,
+        "monthly_payment": monthly_payment,
+        "credit_score": credit_score,
+        "status": status,
+        "description": description,
+    }
+    return _request("POST", f"/accounts/{account_id}/loans", json=payload)
+
+
+def get_loans_for_account(account_id: str) -> list[dict]:
+    return _request("GET", f"/accounts/{account_id}/loans")
+
+
+def get_loan(loan_id: str) -> dict:
+    return _request("GET", f"/loans/{loan_id}")
+
+
+def delete_loan(loan_id: str) -> dict:
+    return _request("DELETE", f"/loans/{loan_id}")
