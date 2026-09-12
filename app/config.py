@@ -18,3 +18,8 @@ if not DATABASE_URL:
         "DATABASE_URL no está configurada. Crea un proyecto en supabase.com, copia la "
         "connection string (Session pooler) y ponla en .env."
     )
+
+# Opcional a propósito: a diferencia de NESSIE_API_KEY/DATABASE_URL, esta no
+# hace fallar el import de config.py. Nada del resto del backend depende de
+# Gemini — solo CognitiveFinancialAgent, que valida su propia key al usarse.
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")

@@ -8,7 +8,7 @@ Track: B2C. Idea: predictor de "¿llego a fin de mes?" — proyecta el saldo fut
 
 - Backend: FastAPI, Python 3.11+
 - DB: Postgres (Supabase) — cache de datos de Nessie + resultados de modelos
-- IA: scikit-learn para el forecast (regresión); Claude API para explicaciones/recomendaciones en lenguaje natural
+- IA: scikit-learn para el forecast (regresión); Gemini API (Google, `google-genai`) para explicaciones/recomendaciones en lenguaje natural — se cambió de Claude a Gemini por costo: Anthropic no tiene tier gratis (ver STATUS.md)
 - Frontend: Next.js 14 + Tailwind (repo o carpeta /web aparte)
 - Gestor de paquetes: pip + venv en backend, pnpm en frontend
 

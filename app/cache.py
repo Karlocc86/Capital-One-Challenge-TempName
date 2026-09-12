@@ -7,7 +7,7 @@ directamente, para no depender de Nessie en vivo durante la demo.
 
 import json
 
-from app.db import get_connection
+from app.db import get_connection, release_connection
 from app.nessie_client import get_account as nessie_get_account
 from app.nessie_client import get_bills_for_account, get_purchases_for_account
 
@@ -18,7 +18,8 @@ def sync_snapshot(account_id: str) -> None:
     purchases = get_purchases_for_account(account_id)
     bills = get_bills_for_account(account_id)
 
-    with get_connection() as conn:
+    conn = get_connection()
+    try:
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -102,26 +103,32 @@ def sync_snapshot(account_id: str) -> None:
                 )
 
         conn.commit()
+    finally:
+        release_connection(conn)
 
 
-def _has_snapshot(account_id: str) -> bool:
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1 FROM accounts_cache WHERE account_id = %s", (account_id,))
-            return cur.fetchone() is not None
+def _has_snapshot(conn, account_id: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM accounts_cache WHERE account_id = %s", (account_id,))
+        return cur.fetchone() is not None
 
 
 def get_account(account_id: str, force_sync: bool = False) -> dict:
-    if force_sync or not _has_snapshot(account_id):
-        sync_snapshot(account_id)
+    conn = get_connection()
+    try:
+        if force_sync or not _has_snapshot(conn, account_id):
+            release_connection(conn)
+            sync_snapshot(account_id)
+            conn = get_connection()
 
-    with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT account_id, nickname, type, balance FROM accounts_cache WHERE account_id = %s",
                 (account_id,),
             )
             row = cur.fetchone()
+    finally:
+        release_connection(conn)
 
     return {
         "_id": row[0],
@@ -132,10 +139,13 @@ def get_account(account_id: str, force_sync: bool = False) -> dict:
 
 
 def get_purchases(account_id: str, force_sync: bool = False) -> list[dict]:
-    if force_sync or not _has_snapshot(account_id):
-        sync_snapshot(account_id)
+    conn = get_connection()
+    try:
+        if force_sync or not _has_snapshot(conn, account_id):
+            release_connection(conn)
+            sync_snapshot(account_id)
+            conn = get_connection()
 
-    with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT purchase_id, amount, purchase_date, description, status "
@@ -143,6 +153,8 @@ def get_purchases(account_id: str, force_sync: bool = False) -> list[dict]:
                 (account_id,),
             )
             rows = cur.fetchall()
+    finally:
+        release_connection(conn)
 
     return [
         {
@@ -157,10 +169,13 @@ def get_purchases(account_id: str, force_sync: bool = False) -> list[dict]:
 
 
 def get_bills(account_id: str, force_sync: bool = False) -> list[dict]:
-    if force_sync or not _has_snapshot(account_id):
-        sync_snapshot(account_id)
+    conn = get_connection()
+    try:
+        if force_sync or not _has_snapshot(conn, account_id):
+            release_connection(conn)
+            sync_snapshot(account_id)
+            conn = get_connection()
 
-    with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT bill_id, payee, nickname, payment_amount, payment_date, recurring_date, status "
@@ -168,6 +183,8 @@ def get_bills(account_id: str, force_sync: bool = False) -> list[dict]:
                 (account_id,),
             )
             rows = cur.fetchall()
+    finally:
+        release_connection(conn)
 
     return [
         {
@@ -181,3 +198,37 @@ def get_bills(account_id: str, force_sync: bool = False) -> list[dict]:
         }
         for r in rows
     ]
+
+
+def get_cached_rescue_plan(account_id: str) -> dict | None:
+    """Solo se llena con planes generados de verdad por Gemini (ver save_rescue_plan)."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT plan FROM rescue_plans_cache WHERE account_id = %s", (account_id,)
+            )
+            row = cur.fetchone()
+    finally:
+        release_connection(conn)
+
+    return row[0] if row else None
+
+
+def save_rescue_plan(account_id: str, plan: dict) -> None:
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO rescue_plans_cache (account_id, plan, generated_at)
+                VALUES (%s, %s, now())
+                ON CONFLICT (account_id) DO UPDATE SET
+                    plan = EXCLUDED.plan,
+                    generated_at = now()
+                """,
+                (account_id, json.dumps(plan)),
+            )
+        conn.commit()
+    finally:
+        release_connection(conn)

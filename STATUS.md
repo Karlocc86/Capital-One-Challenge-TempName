@@ -4,71 +4,81 @@ _Última actualización: 12 de septiembre de 2026_
 
 ## Qué estamos construyendo
 
-Track B2C. Un predictor de "¿llego a fin de mes?": proyecta el saldo futuro del usuario a partir de sus movimientos bancarios y, a diferencia de un simple aviso, **actúa** — propone y ejecuta acciones simuladas como bloquear una categoría de gasto o mover dinero a un "ahorro". Usa la API de Nessie (Capital One) como fuente de datos bancarios simulados.
+Track B2C. Un predictor de "¿llego a fin de mes?": proyecta el saldo futuro del usuario a partir de sus movimientos bancarios y, a diferencia de un simple aviso, **actúa** — propone acciones concretas de rescate. Usa la API de Nessie (Capital One) como fuente de datos bancarios simulados.
 
-## Stack
+## Stack (actualizado — difiere de la idea original en un punto)
 
 - Backend: FastAPI, Python 3.11+
-- DB: Postgres (Supabase) — todavía no implementada
-- IA: scikit-learn para el forecast (regresión) + Claude API para explicaciones en lenguaje natural — todavía no implementada
-- Frontend: Next.js 14 + Tailwind — scaffold provisional ya funcionando (ver Paso 3)
-- Datos: Nessie API (api.nessieisreal.com), consumida vía HTTPS por un firewall de red que bloquea el puerto 80
+- DB: **Postgres (Supabase), implementado** — cache de accounts/purchases/bills, con connection pooling.
+- IA: `scikit-learn` (regresión lineal) para el forecast + **Gemini (`gemini-flash-lite-latest`, Google)**, no Claude — cambio de proveedor por costo: Anthropic no tiene tier gratis y Gemini sí.
+- Frontend: Next.js 14 + Tailwind — scaffold provisional funcionando, todavía sin conectar a `/forecast`.
+- Datos: Nessie API (api.nessieisreal.com) vía HTTPS (puerto 80 bloqueado en la red del hackathon).
 
-## Arquitectura objetivo (pipeline)
+## Arquitectura actual (ya implementada, no solo objetivo)
 
-Nessie API → backend (ingest) → Postgres cache → pandas (features) → modelo forecast (sklearn) + LLM (explicación) → FastAPI (`/forecast`, `/insights`, `/actions`) → dashboard Next.js.
+Nessie API → `nessie_client.py` (único módulo HTTP) → `cache.py` (sync_snapshot + lecturas cache-first) → Postgres (accounts_cache/purchases_cache/bills_cache) → `forecaster.py` (regresión sklearn) → `agent.py` (Gemini, Structured Outputs) → `GET /forecast/{account_id}` → `{"data": {...}, "meta": {...}}`.
 
-Regla dura: el frontend nunca llama a Nessie directamente, todo pasa por el backend.
+Reglas duras que se mantienen: el frontend nunca llama a Nessie directamente; `nessie_client.py` no tiene lógica de negocio; ningún endpoint llama a Nessie en vivo si ya hay snapshot en Postgres.
 
-## Progreso: walking skeleton completo (pasos 1–3 de 4)
+## Progreso: BACKEND.md Fases 1-5 completas
 
-Siguiendo el "Orden de construcción" definido en `CLAUDE.md`, ya completamos y **verificamos contra la API real de Nessie** (no mockeada) todo el camino de datos, de punta a punta: Nessie → backend → navegador.
+`BACKEND.md` (el roadmap detallado del backend, escrito aparte de `CLAUDE.md`) define 5 fases con checkpoints obligatorios. Las 5 están hechas y verificadas contra servicios reales (Nessie, Supabase, Gemini) — nada mockeado.
 
-**Paso 1 — cliente Nessie + seed de datos, DONE**
+**Fase 1 — Cimientos: Nessie + Cache Postgres, DONE**
+- `app/db.py` (connection pool a Supabase), `app/cache.py` (`sync_snapshot`, `get_account/get_purchases/get_bills` cache-first), `scripts/init_db.py`, `scripts/sync.py`.
+- Checkpoint 1 (ajustado): con `NESSIE_BASE_URL` apuntando a un host inválido, los endpoints siguen respondiendo el dato real 100% desde Postgres.
 
-- `app/nessie_client.py`: único módulo que habla con Nessie (customers, accounts, purchases, bills, merchants — crear y leer). Cualquier error de Nessie se loguea con status code y body completo.
-- `scripts/seed.py`: idempotente. Crea (o reutiliza) 1 customer demo ("Demo HackMTY"), 1 account tipo Checking, 1 merchant, 15 purchases de los últimos 30 días, 2 bills recurrentes.
-- `scripts/test_connection.py`: corre el seed y confirma datos reales.
-- Resultado confirmado: Customer "Demo HackMTY", account "Cuenta Principal" con balance $2500, 15 purchases, 2 bills.
+**Fase 2 — Capa Cuantitativa: `FinancialForecaster`, DONE**
+- `app/forecaster.py`: convierte purchases a serie diaria acumulada, regresión lineal (sklearn) → `burn_rate_daily`; bills recurrentes se suman como gasto diario equivalente; guardia si hay <2 días de datos.
+- Checkpoint 2: datos normales, 1 dato, 0 datos — los 3 responden sin excepción (`scripts/test_forecaster.py`).
 
-**Paso 2 — endpoints de solo lectura, DONE**
+**Fase 3 — Capa Cognitiva: `CognitiveFinancialAgent`, DONE (con Gemini, no Claude)**
+- `app/agent.py`: Structured Outputs (`response_schema=FinancialRescuePlan`) contra Gemini. `generate_rescue_plan` regresa `(plan, exito)` — `exito=False` cuando se usó el plan de respaldo, para que el llamador nunca cachee un fallback.
+- Se descubrió que el tier gratis de Gemini **sí falla con cierta frecuencia** (503 "alta demanda", 504 timeout, y hasta un 429 de cuota diaria agotada) — se configuró `attempts=1` + `timeout=10s` en el cliente para fallar rápido al respaldo en vez de esperar ~30s de reintentos por default del SDK.
+- Checkpoint 3: los 3 casos de Fase 2 + un 4to caso con key inválida — los 4 devuelven un `FinancialRescuePlan` válido (`scripts/test_agent.py`).
 
-- `app/main.py`: expone `GET /health` (no toca Nessie) y `GET /summary/{account_id}` (balance + gasto total sumando purchases, sin ningún modelo todavía).
-- Probado en vivo: `/summary/{account_id}` devuelve balance $2500, total_spent $1328, purchase_count 15 sobre la cuenta real sembrada. Un account_id inválido devuelve 404 controlado, no 500.
+**Fase 4 — Orquestador `/forecast/{account_id}`, DONE**
+- Pipeline completo en `app/main.py`: ingesta (cache) → cuantitativa → cognitiva → respuesta envuelta. Try/except: errores de Nessie → 404, cualquier otra falla → 500 genérico. Logs por etapa.
+- **Bug real encontrado y arreglado en el camino**: `db.py` abría una conexión TCP nueva a Supabase por query, sin cerrarla — `/forecast` tardaba 15s. Con connection pooling bajó a ~1-2s de cache + la latencia inherente de Gemini (~6-11s). El requisito de <3s de BACKEND.md se aceptó como no aplicable a la parte de LLM (se escribió antes de que existiera la llamada a Gemini).
 
-**Paso 3 — frontend provisional, DONE**
+**Fase 5 — Blindaje para demo, DONE**
+- Confirmado: ningún endpoint toca Nessie en vivo si hay snapshot (probado con Nessie bloqueado, tanto en `/summary` como en `/forecast`).
+- account_id demo congelado vía variable de entorno (`web/.env.local`), sin flujo de login.
+- 5 requests seguidas a `/forecast`: sin fugas de conexión (tiempos estables), aunque sí se encontró rate limiting real de Gemini (ver abajo).
+- `fixtures/forecast_ricardo_torres_backup.json`: respuesta real capturada de `/forecast`, lista para servir manualmente si todo falla en vivo (ver `fixtures/README.md`).
+- **Nuevo: cache del `rescue_plan` en Postgres** (`rescue_plans_cache`, funciones `get_cached_rescue_plan`/`save_rescue_plan` en `cache.py`). `GET /forecast/{account_id}` solo llama a Gemini si no hay plan cacheado (o si se pasa `?force_refresh=true`); solo se cachean planes generados de verdad (`exito=True`), nunca el fallback. Primera llamada real ~10-13s, llamadas repetidas **~2s**. Esto es crítico para la demo: permite "calentar" el cache antes de salir a presentar y que el pitch en vivo sea instantáneo.
 
-- Scaffold Next.js 14 + TypeScript + Tailwind (App Router) en `web/`, instalado con pnpm.
-- `web/app/page.tsx`: Client Component que hace `fetch` en el navegador a `GET /summary/{account_id}` y muestra balance, gasto total y conteo de purchases — con estados de carga y error.
-- `app/main.py` ahora tiene `CORSMiddleware` habilitado para `http://localhost:3000`.
-- Verificado visualmente en navegador (screenshot): se ve "Cuenta Principal — $2,500 — Gasto total: $1,328 (15 compras)", el mismo dato real que devuelve el backend.
-- Todavía es puramente provisional: sin diseño elaborado, sin selector de cuenta/usuario, un solo account_id hardcodeado por variable de entorno.
+## Persona demo (cambiada, con base real)
 
-**Pendiente:**
+El customer demo dejó de ser "Demo HackMTY" genérico. Ahora es **"Ricardo Torres"**, un perfil calibrado con datos reales del **INEGI (ENIGH 2024, decil III de ingreso)**: ~$12,282 MXN/mes de ingreso, balance en cuenta $3,200 MXN, bills de Renta ($3,500), Servicios ($450) y **un pago recurrente a una casa de empeño/préstamo personal ($800)** — la señal de vulnerabilidad financiera que el pitch quiere mostrar que el modelo detecta. Con este perfil, el forecast proyecta insolvencia en **13 días**, no 33 — mucho más urgente y defendible frente a un jurado.
 
-- Paso 4: `/forecast` (regresión sklearn), `/insights` (Claude API) y `/actions` (acciones simuladas, ej. bloquear categoría o mover a ahorro) — el "momento de valor" del proyecto. Explícitamente no se ha tocado nada de esto todavía.
-- Postgres/Supabase como cache: todavía no implementado (por ahora se llama a Nessie directo desde el backend en cada request).
-- Diseño real del frontend: el actual es solo para confirmar que el dato llega, no la UI final.
+Fuente citable: [ENIGH 2024, INEGI](https://www.inegi.org.mx/contenidos/saladeprensa/boletines/2025/enigh/ENIGH2024_RR.pdf).
 
-## Bugs de Nessie descubiertos y ya resueltos (importante documentarlos, no están en la doc pública)
+`account_id` demo actual: `e8f0c102-eb26-4baf-ad78-629cc03c4d74` (reemplazó al anterior `fea9ad73-...`, ya actualizado en todos los scripts y en `web/.env.local`). La cuenta vieja "Demo HackMTY" quedó huérfana en Nessie, sin usarse — no se borró, es inofensiva.
 
-1. **Puerto 80 (HTTP) bloqueado en la red del hackathon.** Nessie funciona igual de bien por HTTPS — se cambió `NESSIE_BASE_URL` a `https://api.nessieisreal.com`.
-2. **`merchant.category` debe ser un string**, no una lista (ej. `"food"`, no `["food"]"`) — la doc pública sugiere lista.
-3. **`purchase.status` es requerido en el POST** aunque no aparece documentado. Si se crea un purchase sin `status`, Nessie lo guarda pero después el GET truena al intentar deserializarlo (error de validación interno de Nessie) — y como el GET falla para toda la lista, ni siquiera se pueden recuperar los IDs para borrarlos uno por uno. La única salida fue borrar la account completa y recrearla. Ahora `create_purchase` siempre manda `status` (`"completed"` en el seed).
+## Bugs/decisiones técnicas descubiertas (importante para el pitch/documentación)
+
+1. **Puerto 80 (HTTP) bloqueado en la red del hackathon** — se usa HTTPS contra Nessie.
+2. **`merchant.category` debe ser un string**, no una lista.
+3. **`purchase.status` es requerido en el POST** aunque no está documentado — si falta, el GET truena al leer.
+4. **Conexiones Postgres sin pool eran el cuello de botella real de latencia** (15s → ~2s) — no el LLM.
+5. **Gemini `gemini-2.5-flash` dejó de estar disponible para keys nuevas** a mitad de desarrollo (404, "no longer available to new users").
+6. **`gemini-3.6-flash` tiene un límite de cuota gratis de solo 20 requests/día** — se agotó durante las pruebas de este mismo día. Se cambió a **`gemini-flash-lite-latest`** (cuota separada, y es un alias que Google mantiene apuntando al modelo lite vigente, para no repetir el problema del punto 5).
+7. **El tier gratis de Gemini tiene fallos reales de disponibilidad** (429 cuota, 503 alta demanda, 504 timeout) — confirmado en vivo durante las pruebas, no es un escenario hipotético. El fallback, el timeout corto de 10s, y el cache de Fase 5 existen porque de verdad hacen falta.
 
 ## Convenciones que se están respetando
 
-- Toda respuesta de FastAPI va envuelta en `{"data": ..., "meta": {...}}`, nunca el JSON crudo de Nessie.
-- Un solo `customer_id` demo fijo, sin autenticación real de usuarios.
-- `nessie_client.py` no tiene lógica de negocio (nada de forecast/scoring ahí).
-- `.env` (backend) y `web/.env.local` (frontend), con secretos e IDs reales, están en `.gitignore` — nunca se suben a git.
+- Toda respuesta de FastAPI va envuelta en `{"data": ..., "meta": {...}}`.
+- Un solo `customer_id`/`account_id` demo fijo, sin autenticación real.
+- `nessie_client.py` sin lógica de negocio; `cache.py` orquesta pero no hace requests HTTP directos.
+- Secretos (`.env`, `web/.env.local`) fuera de git.
 
-## Estado del repo
+## Pendiente / próximo paso
 
-- `master` tiene ambas features mergeadas (PR de la rama `backend`, que incluyó también el commit del frontend provisional).
-- `app/`, `scripts/`, `requirements.txt` y `web/` ya están en `master`.
-- `CLAUDE.md`, `STATUS.md` y `.env.example` (raíz) siguen sin commitear todavía — quedaron fuera del commit de backend a propósito o por descuido, revisar antes de la próxima ronda de commits.
+- El frontend (Paso 3 original) **todavía no está conectado a `/forecast`** — solo muestra `/summary` (balance + gasto total, sin IA). Conectar la UI al forecast + rescue plan es el siguiente "momento de valor" visual para el pitch.
+- `/actions` (bloquear categoría, mover a ahorro) mencionado en la idea original y en `CLAUDE.md` **no está en BACKEND.md ni implementado todavía** — pendiente decidir si entra al alcance antes del pitch.
+- Diseño real de frontend: sigue pendiente, el actual es solo funcional.
 
-## Próximo paso inmediato
+## Importante para el día del pitch
 
-Empezar el Paso 4: diseñar el modelo de forecast (regresión con `scikit-learn` sobre los datos de purchases/bills ya sembrados) y el endpoint `/forecast`, seguido de `/insights` (explicación en lenguaje natural vía Claude API) y `/actions` (acciones simuladas). Este es el "momento de valor" real del proyecto para el pitch.
+**Calienta el cache antes de salir al escenario**: haz una sola llamada a `GET /forecast/{account_id}` (o abre el frontend una vez, cuando esté conectado) unos minutos antes de presentar. Eso guarda el plan de rescate en Postgres, y durante la demo en vivo la respuesta será de ~2 segundos en vez de 10-13. Si necesitas forzar un plan nuevo (por ejemplo, después de cambiar el prompt), usa `?force_refresh=true`.

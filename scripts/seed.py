@@ -1,7 +1,14 @@
 """
 Siembra un customer demo, una account Checking, ~15 purchases de los últimos
-30 días y 2 bills recurrentes. Idempotente: si ya existe el customer demo
+30 días y bills recurrentes. Idempotente: si ya existe el customer demo
 (buscado por nombre), reutiliza sus IDs en vez de duplicar.
+
+Perfil demo: "Ricardo Torres", trabajador de ingreso medio-bajo en Monterrey.
+Los montos están calibrados con datos reales del INEGI (ENIGH 2024, decil
+III de ingreso: $36,845 MXN de ingreso corriente trimestral promedio, ~$12,282
+MXN/mes) — no son números arbitrarios, representan un perfil de vulnerabilidad
+financiera real, incluyendo un pago recurrente a una casa de empeño/préstamo
+personal informal, justo el tipo de señal que el forecast debe detectar.
 
 Uso: python scripts/seed.py
 """
@@ -15,14 +22,26 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import nessie_client as nc
 
-DEMO_FIRST_NAME = "Demo"
-DEMO_LAST_NAME = "HackMTY"
+DEMO_FIRST_NAME = "Ricardo"
+DEMO_LAST_NAME = "Torres"
 DEMO_ACCOUNT_NICKNAME = "Cuenta Principal"
-DEMO_MERCHANT_NAME = "Demo Merchant HackMTY"
+DEMO_MERCHANT_NAME = "Comercio Local Monterrey"
 
-PURCHASE_DESCRIPTIONS = [
-    "Supermercado", "Gasolina", "Restaurante", "Streaming", "Ropa",
-    "Farmacia", "Cafetería", "Transporte", "Cine", "Gimnasio",
+# (descripción, monto mínimo, monto máximo) en MXN — proporciones inspiradas
+# en ENIGH 2024: alimentos ~38%, transporte ~19.5% del gasto de un hogar.
+PURCHASE_CATEGORIES = [
+    ("Abarrotes", 150.0, 450.0),
+    ("Abarrotes", 150.0, 450.0),
+    ("Transporte (camión urbano)", 20.0, 45.0),
+    ("Transporte (camión urbano)", 20.0, 45.0),
+    ("Transporte (camión urbano)", 20.0, 45.0),
+    ("Gasolina", 200.0, 400.0),
+    ("Comida en la calle (tacos, comida corrida)", 40.0, 90.0),
+    ("Comida en la calle (tacos, comida corrida)", 40.0, 90.0),
+    ("Comida en la calle (tacos, comida corrida)", 40.0, 90.0),
+    ("Recarga celular", 100.0, 200.0),
+    ("Farmacia", 80.0, 250.0),
+    ("Ropa", 200.0, 500.0),
 ]
 
 
@@ -53,7 +72,7 @@ def find_or_create_account(customer_id: str) -> dict:
         customer_id=customer_id,
         account_type="Checking",
         nickname=DEMO_ACCOUNT_NICKNAME,
-        balance=2500.00,
+        balance=3200.00,
     )
     account = result["objectCreated"]
     print(f"[seed] Account demo creada: {account['_id']}")
@@ -93,8 +112,8 @@ def seed_purchases(account_id: str, merchant_id: str) -> None:
     for i in range(15):
         days_ago = random.randint(0, 29)
         purchase_date = (today - timedelta(days=days_ago)).strftime("%Y-%m-%d")
-        amount = round(random.uniform(5.0, 150.0), 2)
-        description = random.choice(PURCHASE_DESCRIPTIONS)
+        description, min_amount, max_amount = random.choice(PURCHASE_CATEGORIES)
+        amount = round(random.uniform(min_amount, max_amount), 2)
 
         nc.create_purchase(
             account_id=account_id,
@@ -123,20 +142,31 @@ def seed_bills(account_id: str) -> None:
         nickname="Renta",
         payment_date=today_str,
         recurring_date=1,
-        payment_amount=650.00,
+        payment_amount=3500.00,
     )
     print("[seed] Bill 'Renta' creada.")
 
     nc.create_bill(
         account_id=account_id,
         status="recurring",
-        payee="Internet y Servicios",
-        nickname="Internet",
+        payee="CFE e Internet",
+        nickname="Servicios",
         payment_date=today_str,
         recurring_date=15,
-        payment_amount=45.00,
+        payment_amount=450.00,
     )
-    print("[seed] Bill 'Internet' creada.")
+    print("[seed] Bill 'Servicios' creada.")
+
+    nc.create_bill(
+        account_id=account_id,
+        status="recurring",
+        payee="Casa de Empeño - Préstamo Personal",
+        nickname="Préstamo",
+        payment_date=today_str,
+        recurring_date=10,
+        payment_amount=800.00,
+    )
+    print("[seed] Bill 'Préstamo' creada (señal de vulnerabilidad financiera).")
 
 
 def run() -> dict:

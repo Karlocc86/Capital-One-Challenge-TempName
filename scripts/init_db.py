@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.db import get_connection
+from app.db import get_connection, release_connection
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS accounts_cache (
@@ -47,14 +47,23 @@ CREATE TABLE IF NOT EXISTS bills_cache (
     raw JSONB,
     synced_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS rescue_plans_cache (
+    account_id TEXT PRIMARY KEY REFERENCES accounts_cache(account_id),
+    plan JSONB NOT NULL,
+    generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
 
 
 def run() -> None:
-    with get_connection() as conn:
+    conn = get_connection()
+    try:
         with conn.cursor() as cur:
             cur.execute(SCHEMA)
         conn.commit()
+    finally:
+        release_connection(conn)
     print("[init_db] Tablas listas: accounts_cache, purchases_cache, bills_cache")
 
 

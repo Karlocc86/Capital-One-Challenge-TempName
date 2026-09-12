@@ -10,11 +10,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.cache import sync_snapshot
-from app.db import get_connection
+from app.db import get_connection, release_connection
 
 
 def count_rows(account_id: str) -> dict:
-    with get_connection() as conn:
+    conn = get_connection()
+    try:
         with conn.cursor() as cur:
             cur.execute("SELECT count(*) FROM accounts_cache WHERE account_id = %s", (account_id,))
             accounts = cur.fetchone()[0]
@@ -22,6 +23,8 @@ def count_rows(account_id: str) -> dict:
             purchases = cur.fetchone()[0]
             cur.execute("SELECT count(*) FROM bills_cache WHERE account_id = %s", (account_id,))
             bills = cur.fetchone()[0]
+    finally:
+        release_connection(conn)
     return {"accounts": accounts, "purchases": purchases, "bills": bills}
 
 
