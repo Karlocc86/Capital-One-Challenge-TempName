@@ -1,3 +1,5 @@
+import CreditWiseCard from "@/components/CreditWiseCard";
+
 type NavItem = {
   label: string;
   icon: React.ReactNode;
@@ -73,7 +75,7 @@ export default function Sidebar() {
         <span className="text-lg font-bold tracking-tight">Fin de Mes</span>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-1 px-3">
+      <nav className="flex flex-col gap-1 overflow-y-auto px-3">
         {navItems.map((item) => (
           <button
             key={item.label}
@@ -90,7 +92,11 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div className="px-3 pb-6">
+      <div className="flex-1" />
+
+      <CreditWiseCard />
+
+      <div className="px-3 py-6">
         <button
           type="button"
           className="flex w-full items-center gap-3 rounded-lg border border-white/20 px-3 py-2.5 text-left text-sm font-medium text-white/90 transition-colors hover:bg-brand-600"
