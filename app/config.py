@@ -23,3 +23,8 @@ if not DATABASE_URL:
 # hace fallar el import de config.py. Nada del resto del backend depende de
 # Gemini — solo CognitiveFinancialAgent, que valida su propia key al usarse.
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# Account del usuario demo (lo imprime `python scripts/seed.py`). Opcional:
+# los endpoints reciben el account_id en la URL; esto lo usan los scripts de
+# prueba para no repetir el literal.
+DEMO_ACCOUNT_ID = os.getenv("DEMO_ACCOUNT_ID")

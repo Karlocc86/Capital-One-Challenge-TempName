@@ -19,12 +19,28 @@ class NessieError(Exception):
         )
 
 
-def _request(method: str, path: str, params: dict | None = None, json: dict | None = None) -> dict:
+def _request(
+    method: str,
+    path: str,
+    params: dict | None = None,
+    json: dict | None = None,
+    empty_list_on_404: bool = False,
+) -> dict | list:
     url = f"{NESSIE_BASE_URL}{path}"
     query = {"key": NESSIE_API_KEY, **(params or {})}
 
     with httpx.Client(timeout=15.0) as client:
         response = client.request(method, url, params=query, json=json)
+
+    # Nessie no es consistente con las listas vacías: /deposits devuelve [],
+    # pero /transfers devuelve 404 con body "No transfers found for this
+    # account". Para los GET de listas ese 404 se trata como [].
+    if (
+        empty_list_on_404
+        and response.status_code == 404
+        and "found for this account" in response.text
+    ):
+        return []
 
     if response.status_code >= 400:
         print(f"[NESSIE ERROR] {method} {url}")
@@ -36,6 +52,10 @@ def _request(method: str, path: str, params: dict | None = None, json: dict | No
         return {}
 
     return response.json()
+
+
+def _get_list(path: str) -> list[dict]:
+    return _request("GET", path, empty_list_on_404=True)
 
 
 # ---------- Customers ----------
@@ -113,7 +133,7 @@ def create_purchase(
 
 
 def get_purchases_for_account(account_id: str) -> list[dict]:
-    return _request("GET", f"/accounts/{account_id}/purchases")
+    return _get_list(f"/accounts/{account_id}/purchases")
 
 
 def get_purchase(purchase_id: str) -> dict:
@@ -148,11 +168,76 @@ def create_bill(
 
 
 def get_bills_for_account(account_id: str) -> list[dict]:
-    return _request("GET", f"/accounts/{account_id}/bills")
+    return _get_list(f"/accounts/{account_id}/bills")
 
 
 def get_bill(bill_id: str) -> dict:
     return _request("GET", f"/bills/{bill_id}")
+
+
+def delete_bill(bill_id: str) -> dict:
+    return _request("DELETE", f"/bills/{bill_id}")
+
+
+# ---------- Deposits ----------
+
+def create_deposit(
+    account_id: str,
+    amount: float,
+    transaction_date: str,
+    description: str = "",
+    medium: str = "balance",
+    status: str = "completed",
+) -> dict:
+    """
+    medium debe ser 'balance' o 'rewards'. transaction_date en YYYY-MM-DD.
+    Verificado: un deposit NO modifica account.balance en Nessie (igual que
+    las purchases) — el balance es un número fijo que se setea al crear la
+    cuenta.
+    """
+    payload = {
+        "medium": medium,
+        "transaction_date": transaction_date,
+        "status": status,
+        "amount": amount,
+        "description": description,
+    }
+    return _request("POST", f"/accounts/{account_id}/deposits", json=payload)
+
+
+def get_deposits_for_account(account_id: str) -> list[dict]:
+    return _get_list(f"/accounts/{account_id}/deposits")
+
+
+def delete_deposit(deposit_id: str) -> dict:
+    return _request("DELETE", f"/deposits/{deposit_id}")
+
+
+# ---------- Transfers ----------
+
+def create_transfer(
+    payer_account_id: str,
+    payee_account_id: str,
+    amount: float,
+    transaction_date: str,
+    description: str = "",
+    medium: str = "balance",
+    status: str = "pending",
+) -> dict:
+    """Base para la acción 'mover a ahorro' (Checking -> Savings). status: 'pending' | 'cancelled' | 'executed'."""
+    payload = {
+        "medium": medium,
+        "payee_id": payee_account_id,
+        "amount": amount,
+        "transaction_date": transaction_date,
+        "status": status,
+        "description": description,
+    }
+    return _request("POST", f"/accounts/{payer_account_id}/transfers", json=payload)
+
+
+def get_transfers_for_account(account_id: str) -> list[dict]:
+    return _get_list(f"/accounts/{account_id}/transfers")
 
 
 # ---------- Merchants ----------
