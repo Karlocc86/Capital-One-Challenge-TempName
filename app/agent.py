@@ -49,6 +49,10 @@ class CognitiveFinancialAgent:
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=FinancialRescuePlan,
+                    # Los modelos 2.5 razonan ("thinking") antes de responder por
+                    # default, lo que agrega latencia sin aportar al output
+                    # estructurado que ya pedimos. flash-lite permite apagarlo.
+                    thinking_config=types.ThinkingConfig(thinking_budget=0),
                 ),
             )
             return response.parsed, True
