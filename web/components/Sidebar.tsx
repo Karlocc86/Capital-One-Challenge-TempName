@@ -115,7 +115,9 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div className="flex-1" />
+      {/* "Casita" de la canica: el hueco libre arriba de CreditWise. Aquí muestra
+          los insights que no pertenecen a ninguna sección visible en la página. */}
+      <div className="min-h-[7.5rem] flex-1" data-avatar-home />
 
       <CreditWiseCard />
 

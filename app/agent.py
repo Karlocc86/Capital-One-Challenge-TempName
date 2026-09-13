@@ -112,25 +112,41 @@ class CognitiveFinancialAgent:
             return self._fallback_insights(summary), False
 
     def _build_insights_prompt(self, summary: dict) -> str:
+        categories = summary.get("spent_by_category") or {}
+        categories_text = (
+            "\n".join(f"  - {cat}: ${amt:.2f}" for cat, amt in categories.items())
+            or "  - (sin compras)"
+        )
         return (
-            "Eres un asesor financiero. Con base en estos datos del usuario, genera "
-            "UNA conclusión breve (máximo 1 frase, lenguaje simple, sin tecnicismos) "
-            "por cada sección del dashboard:\n\n"
+            "Eres un asesor financiero cercano y humano. Con base en estos datos del "
+            "usuario, genera UNA conclusión breve (máximo 1 frase, lenguaje simple, "
+            "sin tecnicismos, tuteando) por cada sección del dashboard:\n\n"
             f"- Saldo en checking: ${summary['checking_balance']:.2f}\n"
             f"- Gasto total ({summary['purchase_count']} compras): ${summary['total_spent']:.2f}\n"
+            f"- Gasto por categoría:\n{categories_text}\n"
             f"- Total en ahorros: ${summary['savings_total']:.2f}\n"
             f"- Saldo en tarjetas de crédito: ${summary['credit_total']:.2f}\n"
             f"- Préstamos activos: {summary['loan_count']}\n"
             f"- Puntos de recompensa acumulados: {summary['rewards_total']}\n\n"
-            "Genera: balance (conclusión sobre el saldo), transactions (sobre el "
-            "historial de movimientos), spending (sobre el patrón de gasto), "
-            "banking_features (un tip general de uso del banco), savings (sobre "
-            "los ahorros), credit (sobre las tarjetas), loans (sobre los "
-            "préstamos), rewards (sobre las recompensas)."
+            "Genera: general (una observación que NO pertenezca a ninguna sección "
+            "del banco: algo sobre los hábitos o el bienestar de la persona que se "
+            "deduzca de sus categorías de compra — p. ej. mucha comida chatarra, "
+            "gasto en salud, transporte — dicho con empatía), balance (conclusión "
+            "sobre el saldo), transactions (sobre el historial de movimientos), "
+            "spending (sobre el patrón de gasto), banking_features (un tip general "
+            "de uso del banco), savings (sobre los ahorros), credit (sobre las "
+            "tarjetas), loans (sobre los préstamos), rewards (sobre las recompensas)."
         )
 
     def _fallback_insights(self, summary: dict) -> SectionInsights:
+        categories = summary.get("spent_by_category") or {}
+        if categories:
+            top_cat, top_amt = next(iter(categories.items()))
+            general = f"Noté que donde más gastas es en {top_cat.lower()} (${top_amt:.2f}). ¿Todo bien por ahí?"
+        else:
+            general = "Aún no veo compras registradas; cuando las haya te cuento qué noto."
         return SectionInsights(
+            general=general,
             balance=f"Tu saldo actual en checking es ${summary['checking_balance']:.2f}.",
             transactions=f"Registramos {summary['purchase_count']} movimientos recientes.",
             spending=f"Has gastado ${summary['total_spent']:.2f} en total.",

@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
-// Claves que debe regresar /insights/{customer_id} (ver app/schemas.py:SectionInsights).
+// Claves que regresa /insights/{customer_id} (ver app/schemas.py:SectionInsights).
 // Cada widget del dashboard se marca con data-avatar-target="<key>" para que la
-// canica sepa a dónde saltar y qué conclusión mostrar ahí.
+// canica sepa a dónde saltar y qué conclusión mostrar ahí. `general` no tiene
+// widget: se muestra en la "casita" del sidebar (data-avatar-home), igual que
+// cualquier insight cuya sección NO esté en la página actual.
 type InsightKey =
+  | "general"
   | "balance"
   | "transactions"
   | "spending"
@@ -19,6 +22,7 @@ type InsightKey =
 type Insights = Partial<Record<InsightKey, string>>;
 
 const FALLBACK_INSIGHTS: Insights = {
+  general: "Observando tus hábitos...",
   balance: "Analizando tu saldo...",
   transactions: "Revisando tus movimientos...",
   spending: "Calculando tu patrón de gasto...",
@@ -29,22 +33,42 @@ const FALLBACK_INSIGHTS: Insights = {
   rewards: "Sumando tus recompensas...",
 };
 
+// Orden fijo en que se rotan los mensajes de la casita: primero el general,
+// luego los de secciones que no están en esta página.
+const HOME_KEY_ORDER: InsightKey[] = [
+  "general",
+  "balance",
+  "transactions",
+  "spending",
+  "banking_features",
+  "savings",
+  "credit",
+  "loans",
+  "rewards",
+];
+
 const STOP_DURATION_MS = 5000;
 const TELEPORT_OUT_MS = 260;
 const MARBLE_SIZE = 26;
 const BUBBLE_WIDTH = 224; // w-56
-const EDGE_MARGIN = 12; // nunca queda a menos de esto del borde de pantalla
+const BUBBLE_GAP = 8; // separación entre canica y bubble
+const EDGE_MARGIN = 12; // el bubble nunca queda a menos de esto del borde de pantalla
 
 type Phase = "idle" | "out" | "in";
-type Pos = { x: number; y: number; bubbleLeft: number };
+type Stop = { kind: "home"; el: HTMLElement } | { kind: "widget"; el: HTMLElement; key: InsightKey };
+type Pos = { x: number; y: number; stop: Stop };
+type Bubble = { left: number; top: number; width: number };
 
 export default function AvatarCanica() {
   const pathname = usePathname();
   const [insights, setInsights] = useState<Insights>(FALLBACK_INSIGHTS);
-  const [targets, setTargets] = useState<HTMLElement[]>([]);
+  const [stops, setStops] = useState<Stop[]>([]);
   const [stopIndex, setStopIndex] = useState(0);
+  const [homeMsgIndex, setHomeMsgIndex] = useState(0);
   const [phase, setPhase] = useState<Phase>("idle");
   const [pos, setPos] = useState<Pos | null>(null);
+  const [bubble, setBubble] = useState<Bubble | null>(null);
+  const bubbleRef = useRef<HTMLDivElement>(null);
 
   // 1. Trae los insights una sola vez (no se llama a Gemini de nuevo en cada
   // cambio de página) — si falla, se quedan los textos genéricos de arriba.
@@ -61,20 +85,26 @@ export default function AvatarCanica() {
       });
   }, []);
 
-  // 2. Cada vez que cambia de página, redescubre los widgets marcados con
-  // data-avatar-target en el DOM actual (cada página tiene widgets distintos).
+  // 2. Cada vez que cambia de página, redescubre la casita y los widgets
+  // marcados en el DOM actual. El recorrido siempre es:
+  // casita → widget 1 → ... → widget n → casita (siguiente mensaje) → ...
   useEffect(() => {
     setStopIndex(0);
+    setHomeMsgIndex(0);
     setPhase("idle");
 
     let tries = 0;
     let raf = 0;
     const scan = () => {
-      const found = Array.from(
-        document.querySelectorAll<HTMLElement>("[data-avatar-target]")
-      );
-      if (found.length > 0 || tries > 20) {
-        setTargets(found);
+      const home = document.querySelector<HTMLElement>("[data-avatar-home]");
+      const widgets = Array.from(document.querySelectorAll<HTMLElement>("[data-avatar-target]"));
+      if (widgets.length > 0 || home || tries > 20) {
+        const next: Stop[] = [];
+        if (home) next.push({ kind: "home", el: home });
+        for (const el of widgets) {
+          next.push({ kind: "widget", el, key: el.dataset.avatarTarget as InsightKey });
+        }
+        setStops(next);
         return;
       }
       tries += 1;
@@ -85,24 +115,24 @@ export default function AvatarCanica() {
     return () => cancelAnimationFrame(raf);
   }, [pathname]);
 
-  // 3. Posiciona la canica en la esquina superior derecha del widget y agenda
-  // el siguiente salto. El bubble de texto se ancla hacia el lado con más
-  // espacio libre para nunca salirse de la pantalla (se "pega a la pared").
-  const moveTo = (index: number, animate: boolean) => {
-    const el = targets[index];
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const x = rect.right;
-    const y = rect.top;
+  // Mensajes que van a la casita: el general + los de secciones que no tienen
+  // widget en esta página (para que ningún insight de Gemini se pierda).
+  const visibleKeys = new Set(stops.filter((s) => s.kind === "widget").map((s) => (s as { key: InsightKey }).key));
+  const homeMessages = HOME_KEY_ORDER.filter((k) => !visibleKeys.has(k))
+    .map((k) => insights[k])
+    .filter((m): m is string => Boolean(m));
 
-    // Por default el bubble se extiende hacia la izquierda del punto (hacia
-    // adentro del widget, que es donde casi siempre hay espacio). Si no
-    // alcanza ni así, se recorta contra el borde de la pantalla.
-    const bubbleLeftGlobal = Math.min(
-      Math.max(x - BUBBLE_WIDTH, EDGE_MARGIN),
-      window.innerWidth - EDGE_MARGIN - BUBBLE_WIDTH
-    );
-    const next: Pos = { x, y, bubbleLeft: bubbleLeftGlobal - x };
+  // 3. Posiciona la canica: centrada en la casita, o en la esquina superior
+  // derecha del widget. El bubble se acomoda después (paso 4) midiendo su
+  // tamaño real para nunca salirse de la pantalla.
+  const moveTo = (index: number, animate: boolean) => {
+    const stop = stops[index];
+    if (!stop) return;
+    const rect = stop.el.getBoundingClientRect();
+    const next: Pos =
+      stop.kind === "home"
+        ? { x: rect.left + rect.width / 2, y: rect.top + Math.min(rect.height * 0.3, 32), stop }
+        : { x: rect.right, y: rect.top, stop };
 
     if (!animate) {
       setPos(next);
@@ -117,21 +147,28 @@ export default function AvatarCanica() {
     }, TELEPORT_OUT_MS);
   };
 
-  const targetsRef = useRef(targets);
-  targetsRef.current = targets;
+  const stopsRef = useRef(stops);
+  stopsRef.current = stops;
 
   useEffect(() => {
-    if (targets.length === 0) {
+    if (stops.length === 0) {
       setPos(null);
       return;
     }
-    moveTo(stopIndex % targets.length, pos !== null);
+    const index = stopIndex % stops.length;
+    moveTo(index, pos !== null);
 
     const interval = window.setInterval(() => {
-      setStopIndex((i) => (i + 1) % targetsRef.current.length);
+      const total = stopsRef.current.length;
+      setStopIndex((i) => {
+        const nextIndex = (i + 1) % total;
+        // Al volver a la casita (o si la casita es la única parada) rota el mensaje.
+        if (stopsRef.current[nextIndex]?.kind === "home") setHomeMsgIndex((m) => m + 1);
+        return nextIndex;
+      });
     }, STOP_DURATION_MS);
 
-    const reposition = () => moveTo(stopIndex % targetsRef.current.length, false);
+    const reposition = () => moveTo(stopIndex % stopsRef.current.length, false);
     window.addEventListener("scroll", reposition, true);
     window.addEventListener("resize", reposition);
 
@@ -141,14 +178,52 @@ export default function AvatarCanica() {
       window.removeEventListener("resize", reposition);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targets, stopIndex]);
+  }, [stops, stopIndex]);
+
+  const current = pos?.stop;
+  let message = "Analizando...";
+  if (current?.kind === "widget") {
+    message = insights[current.key] || message;
+  } else if (current?.kind === "home" && homeMessages.length > 0) {
+    message = homeMessages[homeMsgIndex % homeMessages.length];
+  }
+
+  // 4. Acomoda el bubble con su tamaño real. En la casita va centrado bajo la
+  // canica y dentro del sidebar. En un widget prefiere extenderse hacia la
+  // izquierda (hacia adentro del widget) y hacia abajo; si por ese lado no
+  // cabe en el viewport, se voltea al lado contrario en vez de recortarse.
+  useLayoutEffect(() => {
+    if (!pos || !bubbleRef.current) return;
+    const { x, y, stop } = pos;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const half = MARBLE_SIZE / 2;
+
+    if (stop.kind === "home") {
+      const rect = stop.el.getBoundingClientRect();
+      const width = Math.min(BUBBLE_WIDTH, rect.width - 16);
+      const left = Math.min(Math.max(x - width / 2, rect.left + 8), rect.right - 8 - width);
+      setBubble({ left: left - x, top: half + BUBBLE_GAP, width });
+      return;
+    }
+
+    const h = bubbleRef.current.offsetHeight;
+    const width = BUBBLE_WIDTH;
+
+    // Horizontal: borde derecho del bubble bajo la canica (crece a la izquierda).
+    let left = x + half - width;
+    if (left < EDGE_MARGIN) left = x - half; // voltea: crece a la derecha
+    left = Math.min(Math.max(left, EDGE_MARGIN), vw - EDGE_MARGIN - width);
+
+    // Vertical: abajo de la canica; si se sale por abajo, arriba de ella.
+    let top = y + half + BUBBLE_GAP;
+    if (top + h > vh - EDGE_MARGIN) top = y - half - BUBBLE_GAP - h;
+    top = Math.min(Math.max(top, EDGE_MARGIN), vh - EDGE_MARGIN - h);
+
+    setBubble({ left: left - x, top: top - y, width });
+  }, [pos, message]);
 
   if (!pos) return null;
-
-  const currentKey = targets[stopIndex % targets.length]?.dataset.avatarTarget as
-    | InsightKey
-    | undefined;
-  const message = (currentKey && insights[currentKey]) || "Analizando...";
 
   return (
     <div
@@ -177,8 +252,14 @@ export default function AvatarCanica() {
 
       {phase !== "out" && (
         <div
+          ref={bubbleRef}
           className="absolute rounded-xl bg-slate-900 px-3 py-2 text-xs text-white shadow-xl"
-          style={{ left: pos.bubbleLeft, top: MARBLE_SIZE / 2 + 8, width: BUBBLE_WIDTH }}
+          style={{
+            left: bubble?.left ?? -BUBBLE_WIDTH / 2,
+            top: bubble?.top ?? MARBLE_SIZE / 2 + BUBBLE_GAP,
+            width: bubble?.width ?? BUBBLE_WIDTH,
+            visibility: bubble ? "visible" : "hidden",
+          }}
           role="status"
           aria-live="polite"
         >

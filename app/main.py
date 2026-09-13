@@ -435,6 +435,7 @@ async def insights(customer_id: str, force_refresh: bool = False):
     checking_balance = 0.0
     total_spent = 0.0
     purchase_count = 0
+    spent_by_category: dict[str, float] = {}
     if checking_account:
         try:
             account = get_account(checking_account["_id"])
@@ -447,6 +448,9 @@ async def insights(customer_id: str, force_refresh: bool = False):
         checking_balance = account["balance"]
         total_spent = sum(p["amount"] for p in purchases)
         purchase_count = len(purchases)
+        for p in purchases:
+            cat = p.get("category") or "Otros"
+            spent_by_category[cat] = round(spent_by_category.get(cat, 0.0) + p["amount"], 2)
 
     all_loans = []
     for a in accounts:
@@ -462,6 +466,8 @@ async def insights(customer_id: str, force_refresh: bool = False):
         "checking_balance": checking_balance,
         "total_spent": round(total_spent, 2),
         "purchase_count": purchase_count,
+        # Ordenado de mayor a menor gasto — Gemini usa esto para el insight general.
+        "spent_by_category": dict(sorted(spent_by_category.items(), key=lambda kv: -kv[1])),
         "savings_total": sum(a.get("balance", 0) for a in savings_accounts),
         "credit_total": sum(a.get("balance", 0) for a in credit_accounts),
         "loan_count": len(all_loans),

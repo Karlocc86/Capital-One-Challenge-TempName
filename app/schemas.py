@@ -69,8 +69,13 @@ class FinancialRescuePlan(BaseModel):
 
 class SectionInsights(BaseModel):
     """Una conclusión corta (1 frase) por widget del dashboard — las usa el
-    avatar canica para mostrar un análisis distinto en cada parada."""
+    avatar canica para mostrar un análisis distinto en cada parada.
 
+    `general` es lo que NO pertenece a ningún widget (p. ej. una observación
+    de hábitos deducida de las categorías de compra) — la canica lo muestra en
+    su "casita" del sidebar."""
+
+    general: str
     balance: str
     transactions: str
     spending: str
