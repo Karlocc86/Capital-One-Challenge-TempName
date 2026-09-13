@@ -17,18 +17,22 @@ from app.agent import CognitiveFinancialAgent
 from app.config import DEMO_ACCOUNT_ID as _ENV_ACCOUNT_ID
 from app.forecaster import FinancialForecaster
 
-DEMO_ACCOUNT_ID = _ENV_ACCOUNT_ID or "258f79f0-ff2e-49ca-b9f4-d658317e0168"
+DEMO_ACCOUNT_ID = _ENV_ACCOUNT_ID or "98f6dab5-9b48-4ebe-8f71-13e7308d5b2d"
 
 
 async def case_datos_normales(agent: CognitiveFinancialAgent) -> None:
-    from app.cache import get_account, get_bills, get_purchases
+    from app.cache import get_account, get_bills, get_deposits, get_purchases
+    from app.ledger import compute_balance
 
     account = get_account(DEMO_ACCOUNT_ID)
     purchases = get_purchases(DEMO_ACCOUNT_ID)
+    deposits = get_deposits(DEMO_ACCOUNT_ID)
     bills = get_bills(DEMO_ACCOUNT_ID)
+    # Mismo saldo que usa /forecast: inicial + depósitos − compras − bills cobradas.
+    balance = compute_balance(account["balance"], deposits, purchases, bills)["balance"]
 
-    forecast = FinancialForecaster(account["balance"], purchases, bills).calculate_forecast()
-    plan, success = await agent.generate_rescue_plan(forecast, purchases)
+    forecast = FinancialForecaster(balance, purchases, bills, deposits).calculate_forecast()
+    plan, success = await agent.generate_rescue_plan(forecast, purchases, bills, balance)
     print(f"[caso a: datos normales] (exito={success})\n{plan.model_dump_json(indent=2)}\n")
 
 

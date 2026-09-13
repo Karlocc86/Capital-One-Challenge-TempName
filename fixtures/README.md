@@ -1,12 +1,14 @@
 # Fixtures — respaldo para la demo
 
-Respuestas **reales** de la API para el usuario demo (Ricardo Torres, account `258f79f0-ff2e-49ca-b9f4-d658317e0168`), capturadas y verificadas — no son mocks inventados.
+Respuestas **reales** de la API para el usuario demo (Ricardo Torres, account `98f6dab5-9b48-4ebe-8f71-13e7308d5b2d`), capturadas y verificadas — no son mocks inventados.
 
 | Archivo | Endpoint | Qué alimenta en la UI |
 |---|---|---|
 | `forecast_ricardo_torres_backup.json` | `GET /forecast/{account_id}` | Días a la insolvencia + plan de rescate (Gemini) |
 | `summary_ricardo_torres.json` | `GET /summary/{account_id}` | Saldo, `money_in`/`money_out` (barras de Gastos) |
 | `transactions_ricardo_torres.json` | `GET /transactions/{account_id}?limit=20` | Transacciones recientes (compras + nómina) |
+| `purchases_ricardo_torres.json` | `GET /purchases/{account_id}` | Todas las compras con comercio + resumen por comercio (el dashboard muestra las 7 más recientes) |
+| `merchants.json` | `GET /merchants` | Catálogo de comercios con categoría |
 | `bills_ricardo_torres.json` | `GET /bills/{account_id}` | Próximas transacciones (bills con `next_payment_date`) |
 | `accounts_ricardo_torres.json` | `GET /accounts/{account_id}` | Sidebar (Cheques + Ahorro, número enmascarado) |
 
@@ -32,10 +34,12 @@ python -m http.server 8001
 Con el backend corriendo y Nessie/Postgres/Gemini sanos (las fechas de las transacciones son relativas al día del seed: si pasaron días, corre antes `python scripts/seed.py --reset` y `python scripts/sync.py <account_id>`):
 
 ```bash
-ID=258f79f0-ff2e-49ca-b9f4-d658317e0168
+ID=98f6dab5-9b48-4ebe-8f71-13e7308d5b2d
 curl -s "http://localhost:8000/forecast/$ID?force_refresh=true" -o fixtures/forecast_ricardo_torres_backup.json
 curl -s "http://localhost:8000/summary/$ID"                     -o fixtures/summary_ricardo_torres.json
 curl -s "http://localhost:8000/transactions/$ID?limit=20"       -o fixtures/transactions_ricardo_torres.json
+curl -s "http://localhost:8000/purchases/$ID"                   -o fixtures/purchases_ricardo_torres.json
+curl -s "http://localhost:8000/merchants"                        -o fixtures/merchants.json
 curl -s "http://localhost:8000/bills/$ID"                       -o fixtures/bills_ricardo_torres.json
 curl -s "http://localhost:8000/accounts/$ID"                    -o fixtures/accounts_ricardo_torres.json
 ```

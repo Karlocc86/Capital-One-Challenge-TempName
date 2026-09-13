@@ -36,11 +36,15 @@ class CognitiveFinancialAgent:
         )
 
     async def generate_rescue_plan(
-        self, forecast: ForecastMetrics, purchases: list[dict]
+        self,
+        forecast: ForecastMetrics,
+        purchases: list[dict],
+        bills: list[dict] | None = None,
+        balance: float | None = None,
     ) -> tuple[FinancialRescuePlan, bool]:
         """Regresa (plan, exito). exito=False si se usó el plan de respaldo —
         el llamador no debe cachear un plan con exito=False."""
-        prompt = self._build_prompt(forecast, purchases)
+        prompt = self._build_prompt(forecast, purchases, bills or [], balance)
 
         try:
             response = await self.client.aio.models.generate_content(
@@ -63,36 +67,74 @@ class CognitiveFinancialAgent:
             print(f"[agent] Error inesperado generando el plan ({type(e).__name__}): {e}")
             return self._fallback_plan(forecast), False
 
-    def _build_prompt(self, forecast: ForecastMetrics, purchases: list[dict]) -> str:
+    def _build_prompt(
+        self,
+        forecast: ForecastMetrics,
+        purchases: list[dict],
+        bills: list[dict],
+        balance: float | None,
+    ) -> str:
         purchases_summary = (
             "\n".join(
-                f"- {p.get('purchase_date')}: {p.get('description') or 'compra'} "
-                f"(${p.get('amount', 0):.2f})"
+                f"- {p.get('purchase_date')}: {p.get('merchant_name') or p.get('description') or 'compra'}"
+                f"{' [' + p['category'] + ']' if p.get('category') else ''} (${p.get('amount', 0):.2f})"
                 for p in purchases[:15]
             )
             or "Sin compras registradas."
         )
+        bills_summary = (
+            "\n".join(
+                f"- {b.get('payee') or b.get('nickname')}: ${b.get('payment_amount', 0):.2f} el día {b.get('recurring_date')} de cada mes"
+                for b in bills
+                if b.get("status") == "recurring"
+            )
+            or "Sin pagos fijos registrados."
+        )
 
+        context_lines = []
+        if balance is not None:
+            context_lines.append(f"Saldo disponible hoy: ${balance:,.2f} MXN.")
+        if forecast.next_paycheck_date:
+            context_lines.append(
+                f"Próxima nómina esperada: {forecast.next_paycheck_date} (${forecast.paycheck_amount or 0:,.2f})."
+            )
         if forecast.insolvency_date:
-            insolvency_line = (
+            context_lines.append(
                 f"Se proyecta insolvencia el {forecast.insolvency_date} "
-                f"(en {forecast.days_remaining} días), con un burn rate de "
-                f"${forecast.burn_rate_daily:.2f}/día."
+                f"(en {forecast.days_remaining} días), con un gasto promedio de "
+                f"${forecast.burn_rate_daily:.2f}/día (compras + pagos fijos prorrateados)."
             )
         else:
-            insolvency_line = "No se proyecta insolvencia con la tendencia actual."
+            context_lines.append("No se proyecta insolvencia en los próximos 90 días con la tendencia actual.")
+        if forecast.lowest_balance is not None and forecast.lowest_balance_date:
+            context_lines.append(
+                f"Punto más bajo proyectado: ${forecast.lowest_balance:,.2f} el {forecast.lowest_balance_date}."
+            )
+        # Los cargos puntuales de las próximas semanas son lo que el usuario
+        # necesita ver venir (la renta pega de golpe, no prorrateada).
+        upcoming = [
+            f"- {pt.date}: {', '.join(pt.events)} → saldo ${pt.balance:,.2f}"
+            for pt in forecast.projection[1:31]
+            if pt.events
+        ]
+        if upcoming:
+            context_lines.append("Movimientos fijos de los próximos 30 días:\n" + "\n".join(upcoming))
 
         return (
-            "Eres un asesor financiero. Con base en este análisis, genera un plan de "
-            "rescate breve y accionable para el usuario.\n\n"
-            f"{insolvency_line}\n\n"
-            "Historial de compras recientes:\n"
+            "Eres un asesor financiero para una persona de ingreso medio-bajo en México "
+            "(montos en pesos mexicanos). Con base en este análisis, genera un plan de "
+            "rescate breve, concreto y realista para el usuario.\n\n"
+            + "\n".join(context_lines)
+            + "\n\nPagos fijos mensuales:\n"
+            f"{bills_summary}\n\n"
+            "Compras recientes (comercio [categoría]):\n"
             f"{purchases_summary}\n\n"
             "Genera: un resumen breve (summary), una advertencia de insolvencia en "
             "lenguaje claro para el usuario (insolvency_warning), y 2-3 acciones "
-            "concretas recomendadas (recommended_actions), cada una con su "
-            "descripción y el impacto estimado en texto simple "
-            '(ej. "+$50/mes" o "retrasa insolvencia 5 días").'
+            "concretas recomendadas (recommended_actions) que se puedan ejecutar esta "
+            "semana — menciona comercios o categorías específicas del historial cuando "
+            "aplique — cada una con su descripción y el impacto estimado en texto simple "
+            '(ej. "+$500/mes" o "retrasa insolvencia 5 días").'
         )
 
     def _fallback_plan(self, forecast: ForecastMetrics) -> FinancialRescuePlan:

@@ -1,11 +1,11 @@
 """
 Siembra el "mundo" del usuario demo en Nessie: un customer, una cuenta
 Checking y una Savings, 8 merchants de Monterrey, 26 purchases fijas de los
-últimos 30 días, 2 depósitos de nómina (quincenas) y 3 bills recurrentes.
+últimos 30 días, 2 depósitos de nómina (quincenas) y 4 bills recurrentes.
 
 El dataset es DETERMINISTA (nada de random): cada purchase tiene su comercio,
 monto y día relativo a hoy escritos a mano. Así el forecast siempre proyecta
-lo mismo (~13 días a la insolvencia) y la UI siempre muestra las mismas
+lo mismo (~11 días a la insolvencia) y la UI siempre muestra las mismas
 transacciones.
 
 Perfil demo: "Ricardo Torres", trabajador de ingreso medio-bajo en Monterrey.
@@ -24,8 +24,10 @@ Idempotencia:
 
 Uso:
     python scripts/seed.py            # siembra (o completa) el dataset
-    python scripts/seed.py --reset    # borra purchases/deposits y resiembra
-                                      # relativo a hoy (correr la mañana del pitch)
+    python scripts/seed.py --reset    # recrea la cuenta de cheques (nuevo account_id,
+                                      # actualiza .env y web/.env.local) y resiembra
+                                      # relativo a hoy (correr la mañana del pitch;
+                                      # después: init_db + sync + reiniciar backend/frontend)
 """
 
 import sys
@@ -196,15 +198,46 @@ def seed_bills(account_id: str) -> None:
         print(f"[seed] Bill '{nickname}' creada: ${amount:.2f} el día {recurring_date}.")
 
 
-def reset_movements(account_id: str) -> None:
-    """Borra purchases y deposits de la cuenta para resembrar relativo a hoy. Las bills no dependen de la fecha."""
-    purchases = nc.get_purchases_for_account(account_id)
-    deposits = nc.get_deposits_for_account(account_id)
-    for p in purchases:
-        nc.delete_purchase(p["_id"])
-    for d in deposits:
-        nc.delete_deposit(d["_id"])
-    print(f"[seed] --reset: {len(purchases)} purchases y {len(deposits)} deposits borrados.")
+def recreate_checking(customer_id: str, old_account: dict) -> dict:
+    """
+    En este Nessie las purchases NO se pueden borrar ni editar (todas las rutas
+    /purchases/{id} responden 403), pero sí se puede borrar la cuenta completa.
+    Así que --reset borra la cuenta de cheques y la crea de nuevo (nuevo
+    account_id) para resembrar relativo a hoy con los montos actuales.
+    """
+    nc.delete_account(old_account["_id"])
+    print(f"[seed] --reset: cuenta '{old_account['nickname']}' {old_account['_id']} borrada (con sus movimientos).")
+    result = nc.create_account(
+        customer_id=customer_id,
+        account_type="Checking",
+        nickname=DEMO_CHECKING_NICKNAME,
+        balance=DEMO_CHECKING_BALANCE,
+    )
+    account = result["objectCreated"]
+    print(f"[seed] --reset: cuenta '{DEMO_CHECKING_NICKNAME}' recreada: {account['_id']}")
+    return account
+
+
+ENV_FILES = (
+    (Path(__file__).resolve().parent.parent / ".env", "DEMO_ACCOUNT_ID"),
+    (Path(__file__).resolve().parent.parent / "web" / ".env.local", "NEXT_PUBLIC_DEMO_ACCOUNT_ID"),
+)
+
+
+def update_env_files(account_id: str) -> None:
+    """Deja el account_id nuevo en .env y web/.env.local (solo esas líneas; si no existe el archivo, no lo crea)."""
+    for path, key in ENV_FILES:
+        if not path.exists():
+            print(f"[seed] {path.name} no existe; agrega a mano {key}={account_id}")
+            continue
+        lines = path.read_text(encoding="utf-8").splitlines()
+        new_line = f"{key}={account_id}"
+        if any(line.startswith(f"{key}=") for line in lines):
+            lines = [new_line if line.startswith(f"{key}=") else line for line in lines]
+        else:
+            lines.append(new_line)
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        print(f"[seed] {path.relative_to(path.parent.parent)}: {new_line}")
 
 
 def run(reset: bool = False) -> dict:
@@ -214,7 +247,8 @@ def run(reset: bool = False) -> dict:
     merchants = find_or_create_merchants()
 
     if reset:
-        reset_movements(checking["_id"])
+        checking = recreate_checking(customer["_id"], checking)
+        update_env_files(checking["_id"])
 
     seed_purchases(checking["_id"], merchants)
     seed_deposits(checking["_id"])

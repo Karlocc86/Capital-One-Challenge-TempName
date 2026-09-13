@@ -8,7 +8,7 @@ Track B2C. Proyecta el saldo futuro del usuario a partir de sus movimientos banc
 
 1. Siembra (`scripts/seed.py`, dataset fijo en `app/demo_data.py`) un customer demo en Nessie con cuenta de cheques y de ahorro, 8 comercios de Monterrey con categoría, 26 compras, 2 depósitos de nómina y bills recurrentes, calibrado con datos reales del INEGI (ENIGH 2024) para que el escenario de riesgo financiero sea creíble.
 2. El backend cachea ese snapshot en Postgres (nunca depende de una llamada en vivo a Nessie durante la demo).
-3. `FinancialForecaster` (regresión lineal con `scikit-learn`) calcula el burn rate diario y proyecta la fecha en la que el saldo llega a cero.
+3. `FinancialForecaster` proyecta el saldo **día a día** a 90 días: gasto variable por regresión lineal (`scikit-learn`), bills como cargos puntuales en su fecha y quincenas futuras inferidas de los depósitos. La insolvencia es el primer día con saldo negativo.
 4. `CognitiveFinancialAgent` (Gemini, Structured Outputs) traduce ese forecast en un plan de rescate en lenguaje natural con acciones concretas.
 5. `GET /forecast/{account_id}` expone ambas capas ya combinadas; el resultado del plan de rescate se cachea en Postgres para que la demo en vivo responda en ~2s.
 
@@ -58,16 +58,18 @@ python scripts/test_connection.py   # debe imprimir el customer demo y su balanc
 uvicorn app.main:app --reload --port 8000
 ```
 
-Las fechas del dataset son relativas al día del seed: la mañana del pitch corre `python scripts/seed.py --reset && python scripts/sync.py <account_id>`.
+Las fechas del dataset son relativas al día del seed: la mañana del pitch corre `python scripts/seed.py --reset` (recrea la cuenta y actualiza `.env`/`web/.env.local`), luego `python scripts/sync.py <account_id nuevo>` y reinicia backend y frontend.
 
 Endpoints disponibles (todos `{"data", "meta"}`, montos en MXN):
 
 - `GET /health`
-- `GET /summary/{account_id}` — saldo, gasto total, ingresos/egresos de los últimos 30 días
+- `GET /summary/{account_id}` — saldo disponible calculado (inicial + depósitos − compras − bills cobradas), gasto total, ingresos/egresos de los últimos 30 días
 - `GET /accounts/{account_id}` — cuentas del customer (Cheques, Ahorro) con número enmascarado
 - `GET /transactions/{account_id}?limit=20&type=all|purchase|deposit` — compras + depósitos con comercio y categoría
+- `GET /purchases/{account_id}` — todas las compras con comercio + resumen por comercio
+- `GET /merchants` — catálogo de comercios con categoría
 - `GET /bills/{account_id}` — bills recurrentes con próxima fecha de cobro
-- `GET /forecast/{account_id}` — días a la insolvencia + plan de rescate (agrega `?force_refresh=true` para regenerar el plan en vez de usar el cacheado)
+- `GET /forecast/{account_id}` — proyección día a día (90 días), días a la insolvencia, próxima nómina + plan de rescate (agrega `?force_refresh=true` para regenerar el plan en vez de usar el cacheado)
 
 ### Frontend (Next.js, puerto 3000)
 

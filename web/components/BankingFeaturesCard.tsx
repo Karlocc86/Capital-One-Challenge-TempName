@@ -1,4 +1,3 @@
-import CardMenu from "@/components/CardMenu";
 
 const iconProps = {
   width: 22,
@@ -58,7 +57,6 @@ export default function BankingFeaturesCard() {
     <div className="rounded-2xl bg-white p-6 shadow-card">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-bold text-slate-900">Funciones bancarias</h2>
-        <CardMenu />
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">

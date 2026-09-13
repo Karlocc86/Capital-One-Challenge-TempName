@@ -8,7 +8,7 @@ directamente, para no depender de Nessie en vivo durante la demo.
 import json
 
 from app.db import get_connection, release_connection
-from app.demo_data import real_amount
+from app.demo_data import opening_balance_for, real_amount
 from app.nessie_client import get_account as nessie_get_account
 from app.nessie_client import (
     get_accounts_for_customer as nessie_get_accounts_for_customer,
@@ -40,7 +40,9 @@ def _upsert_account(cur, account: dict) -> None:
             account.get("customer_id"),
             account.get("nickname"),
             account.get("type"),
-            account.get("balance"),
+            # Saldo inicial: para la cuenta demo viene de demo_data (Nessie no
+            # deja actualizarlo); raw conserva lo que dijo Nessie.
+            opening_balance_for(account),
             json.dumps(account),
         ),
     )
@@ -298,6 +300,29 @@ def get_purchases(account_id: str, force_sync: bool = False) -> list[dict]:
             "merchant_id": r[5],
             "merchant_name": r[6],
             "category": r[7],
+        }
+        for r in rows
+    ]
+
+
+def get_merchants() -> list[dict]:
+    """Todos los merchants en cache (los sincroniza sync_snapshot; son por API key, no por cuenta)."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT merchant_id, name, category, raw FROM merchants_cache ORDER BY name"
+            )
+            rows = cur.fetchall()
+    finally:
+        release_connection(conn)
+
+    return [
+        {
+            "_id": r[0],
+            "name": r[1],
+            "category": r[2],
+            "address": (r[3] or {}).get("address"),
         }
         for r in rows
     ]

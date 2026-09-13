@@ -11,17 +11,21 @@ from app.cache import (
     get_bills,
     get_cached_rescue_plan,
     get_deposits,
+    get_merchants,
     get_purchases,
     save_rescue_plan,
 )
 from app.demo_data import DEMO_EMPLOYER, DEMO_MONTHLY_INCOME
 from app.forecaster import FinancialForecaster
-from app.nessie_client import (
-    NessieError,
-    get_accounts_for_customer,
-    get_loans_for_account,
-    get_purchases_for_account,
-)
+from app.ledger import compute_balance
+
+# Las pantallas por tipo de cuenta (savings, credit-cards, loans, rewards)
+# pegan a Nessie en vivo; se importan con alias para no pisar las funciones
+# homónimas de cache.py que usa el resto de los endpoints.
+from app.nessie_client import NessieError
+from app.nessie_client import get_accounts_for_customer as nessie_get_accounts_for_customer
+from app.nessie_client import get_loans_for_account as nessie_get_loans_for_account
+from app.nessie_client import get_purchases_for_account as nessie_get_purchases_for_account
 
 CURRENCY = "MXN"
 SUMMARY_WINDOW_DAYS = 30
@@ -32,6 +36,7 @@ BILL_CATEGORIES = {
     "Renta": "Vivienda",
     "Servicios": "Servicios y facturas",
     "Préstamo": "Deuda",
+    "Abono Coppel": "Deuda",
 }
 
 app = FastAPI(title="Fin de Mes API")
@@ -77,7 +82,8 @@ def health():
 @app.get("/summary/{account_id}")
 def summary(account_id: str):
     """
-    Saldo + ingresos/egresos de los últimos 30 días (ventana móvil, no mes
+    Saldo disponible (saldo inicial + depósitos − compras, ver app/ledger.py)
+    e ingresos/egresos de los últimos 30 días (ventana móvil, no mes
     calendario: el seed usa fechas relativas a hoy, y con mes calendario el
     día 1 los egresos serían ~0).
     """
@@ -85,12 +91,12 @@ def summary(account_id: str):
     purchases = get_purchases(account_id)
     deposits = get_deposits(account_id)
     bills = get_bills(account_id)
+    ledger = compute_balance(account["balance"], deposits, purchases, bills)
 
     today = date.today()
     window_start = today - timedelta(days=SUMMARY_WINDOW_DAYS)
     in_window = lambda d: date.fromisoformat(d) >= window_start  # noqa: E731
 
-    total_spent = sum(p["amount"] for p in purchases)
     money_out = sum(p["amount"] for p in purchases if in_window(p["purchase_date"]))
     money_in = sum(d["amount"] for d in deposits if in_window(d["transaction_date"]))
     bills_monthly_total = sum(b["payment_amount"] for b in bills if b["status"] == "recurring")
@@ -99,9 +105,12 @@ def summary(account_id: str):
         "data": {
             "account_id": account["_id"],
             "nickname": account["nickname"],
-            "balance": account["balance"],
+            "balance": ledger["balance"],
+            "opening_balance": ledger["opening_balance"],
+            "bills_charged": ledger["bills_charged"],
             "account_number_masked": _mask(account["account_number"]),
-            "total_spent": round(total_spent, 2),
+            "total_spent": ledger["money_out"],
+            "total_deposited": ledger["money_in"],
             "purchase_count": len(purchases),
             "money_in": round(money_in, 2),
             "money_out": round(money_out, 2),
@@ -125,13 +134,18 @@ def accounts(account_id: str):
     """Todas las cuentas del customer dueño de `account_id` (sidebar: Cheques, Ahorro...)."""
     account = _load_account(account_id)
     siblings = get_accounts_for_customer(account["customer_id"])
+    # Solo la cuenta actual tiene movimientos en cache; las demás (Ahorro)
+    # muestran el balance tal cual lo reporta Nessie.
+    current_balance = compute_balance(
+        account["balance"], get_deposits(account_id), get_purchases(account_id), get_bills(account_id)
+    )["balance"]
 
     data = [
         {
             "account_id": a["_id"],
             "nickname": a["nickname"],
             "type": a["type"],
-            "balance": a["balance"],
+            "balance": current_balance if a["_id"] == account_id else a["balance"],
             "account_number_masked": _mask(a["account_number"]),
             "is_current": a["_id"] == account_id,
         }
@@ -239,6 +253,74 @@ def bills(account_id: str):
     }
 
 
+@app.get("/merchants")
+def merchants():
+    """Todos los comercios en cache, con su categoría (la etiqueta que pinta la UI)."""
+    data = [
+        {
+            "merchant_id": m["_id"],
+            "name": m["name"],
+            "category": m["category"],
+            "address": m["address"],
+        }
+        for m in get_merchants()
+    ]
+    return {"data": data, "meta": {"count": len(data)}}
+
+
+@app.get("/purchases/{account_id}")
+def purchases(account_id: str):
+    """
+    Todas las compras de la cuenta (más reciente primero) con su comercio, más
+    la lista de comercios que aparecen en ellas con el total gastado en cada
+    uno. El dashboard usa las primeras N como "Transacciones recientes".
+    """
+    _load_account(account_id)
+    rows = get_purchases(account_id)
+
+    data = [
+        {
+            "id": p["_id"],
+            "direction": "out",
+            "amount": p["amount"],
+            "date": p["purchase_date"],
+            "merchant_id": p["merchant_id"],
+            "merchant": p["merchant_name"] or p["description"] or "Compra",
+            "category": p["category"] or "Otros",
+            "description": p["description"],
+            "status": p["status"],
+        }
+        for p in rows
+    ]
+
+    by_merchant: dict[str, dict] = {}
+    for p in data:
+        entry = by_merchant.setdefault(
+            p["merchant_id"] or p["merchant"],
+            {
+                "merchant_id": p["merchant_id"],
+                "name": p["merchant"],
+                "category": p["category"],
+                "total_spent": 0.0,
+                "purchase_count": 0,
+            },
+        )
+        entry["total_spent"] = round(entry["total_spent"] + p["amount"], 2)
+        entry["purchase_count"] += 1
+    merchants_used = sorted(by_merchant.values(), key=lambda m: m["total_spent"], reverse=True)
+
+    return {
+        "data": {"purchases": data, "merchants": merchants_used},
+        "meta": {
+            "account_id": account_id,
+            "purchase_count": len(data),
+            "merchant_count": len(merchants_used),
+            "total_spent": round(sum(p["amount"] for p in data), 2),
+            "currency": CURRENCY,
+        },
+    }
+
+
 # Nessie no tiene endpoint "accounts por tipo" directo, así que filtramos
 # sobre todas las accounts del customer. Usado por las 4 pantallas nuevas
 # (ahorros, tarjetas, préstamos, recompensas). Pega directo a Nessie (no pasa
@@ -246,7 +328,7 @@ def bills(account_id: str):
 # por customer ni loans todavía.
 def _accounts_by_type(customer_id: str, account_type: str) -> list[dict]:
     try:
-        accounts = get_accounts_for_customer(customer_id)
+        accounts = nessie_get_accounts_for_customer(customer_id)
     except NessieError as e:
         raise HTTPException(
             status_code=404,
@@ -268,7 +350,7 @@ def credit_cards(customer_id: str):
     cards = []
     for account in accounts:
         try:
-            purchases = get_purchases_for_account(account["_id"])
+            purchases = nessie_get_purchases_for_account(account["_id"])
         except NessieError as e:
             raise HTTPException(
                 status_code=404,
@@ -283,7 +365,7 @@ def credit_cards(customer_id: str):
 @app.get("/loans/{customer_id}")
 def loans(customer_id: str):
     try:
-        accounts = get_accounts_for_customer(customer_id)
+        accounts = nessie_get_accounts_for_customer(customer_id)
     except NessieError as e:
         raise HTTPException(
             status_code=404,
@@ -293,7 +375,7 @@ def loans(customer_id: str):
     all_loans = []
     for account in accounts:
         try:
-            all_loans.extend(get_loans_for_account(account["_id"]))
+            all_loans.extend(nessie_get_loans_for_account(account["_id"]))
         except NessieError as e:
             raise HTTPException(
                 status_code=404,
@@ -306,7 +388,7 @@ def loans(customer_id: str):
 @app.get("/rewards/{customer_id}")
 def rewards(customer_id: str):
     try:
-        accounts = get_accounts_for_customer(customer_id)
+        accounts = nessie_get_accounts_for_customer(customer_id)
     except NessieError as e:
         raise HTTPException(
             status_code=404,
@@ -328,7 +410,9 @@ async def forecast(account_id: str, force_refresh: bool = False):
         print(f"[forecast] ingesta: leyendo cache para account {account_id}")
         account = get_account(account_id)
         purchases = get_purchases(account_id)
+        deposits = get_deposits(account_id)
         bills = get_bills(account_id)
+        balance = compute_balance(account["balance"], deposits, purchases, bills)["balance"]
     except NessieError as e:
         print(f"[forecast] ingesta falló: {e}")
         raise HTTPException(
@@ -338,9 +422,7 @@ async def forecast(account_id: str, force_refresh: bool = False):
 
     try:
         print("[forecast] capa cuantitativa: calculando forecast")
-        forecast_result = FinancialForecaster(
-            account["balance"], purchases, bills
-        ).calculate_forecast()
+        forecast_result = FinancialForecaster(balance, purchases, bills, deposits).calculate_forecast()
 
         rescue_plan_data = None if force_refresh else get_cached_rescue_plan(account_id)
         if rescue_plan_data:
@@ -348,7 +430,7 @@ async def forecast(account_id: str, force_refresh: bool = False):
         else:
             print("[forecast] capa cognitiva: generando plan de rescate")
             agent = CognitiveFinancialAgent()
-            rescue_plan, success = await agent.generate_rescue_plan(forecast_result, purchases)
+            rescue_plan, success = await agent.generate_rescue_plan(forecast_result, purchases, bills, balance)
             rescue_plan_data = rescue_plan.model_dump(mode="json")
             if success:
                 save_rescue_plan(account_id, rescue_plan_data)

@@ -55,20 +55,26 @@ El customer demo dejó de ser "Demo HackMTY" genérico. Ahora es **"Ricardo Torr
 
 Fuente citable: [ENIGH 2024, INEGI](https://www.inegi.org.mx/contenidos/saladeprensa/boletines/2025/enigh/ENIGH2024_RR.pdf).
 
-`account_id` demo actual: **`258f79f0-ff2e-49ca-b9f4-d658317e0168`** ("Cuenta de Cheques"). Vive en `.env` (`DEMO_ACCOUNT_ID`, lo leen los scripts de prueba vía `app/config.py`) y en `web/.env.local` (`NEXT_PUBLIC_DEMO_ACCOUNT_ID`). La cuenta anterior `e8f0c102-…` ("Cuenta Principal", 15 compras aleatorias) **se borró de Nessie** porque era del mismo customer y aparecía en `/accounts`.
+`account_id` demo actual: **`98f6dab5-9b48-4ebe-8f71-13e7308d5b2d`** ("Cuenta de Cheques"). Vive en `.env` (`DEMO_ACCOUNT_ID`, lo leen los scripts de prueba vía `app/config.py`) y en `web/.env.local` (`NEXT_PUBLIC_DEMO_ACCOUNT_ID`). La cuenta anterior `e8f0c102-…` ("Cuenta Principal", 15 compras aleatorias) **se borró de Nessie** porque era del mismo customer y aparecía en `/accounts`.
 
-## Dataset demo determinista (2026-09-12)
+## Dataset demo determinista (recalibrado 2026-09-12, egresos > ingresos)
 
 El seed dejó de ser aleatorio. `app/demo_data.py` es la fuente de verdad y `scripts/seed.py` lo siembra en Nessie:
 
-- **2 cuentas**: Checking "Cuenta de Cheques" ($3,200) y Savings "Ahorro" ($500, base para la acción "mover a ahorro").
+- **2 cuentas**: Checking "Cuenta de Cheques" (saldo inicial **$5,150**) y Savings "Ahorro" ($500, base para la acción "mover a ahorro").
 - **8 merchants de Monterrey** (OXXO, Soriana Híper, Pemex, Camión Urbano MTY, Tacos El Güero, Telcel, Farmacias Guadalajara, Coppel). La `category` del merchant en Nessie **es la etiqueta que pinta la UI** (Supermercado, Comida y bebida, Transporte y combustible, Servicios y facturas, Salud, Ropa) — una sola fuente de verdad, sin tabla de mapeo.
-- **26 purchases** con día relativo a hoy, monto y descripción fijos (total $2,501.70 / 30 días; alimentos+súper ≈ 61 %, transporte ≈ 18 %, proporciones ENIGH decil III).
-- **2 depósitos de nómina** ($6,141 c/u, días −25 y −10 = $12,282/mes).
-- **3 bills** sin cambio (Renta 3,500 día 1 · Servicios 450 día 15 · Préstamo 800 día 10).
-- Resultado verificado: burn **$235.05/día → insolvencia en 13 días**, R² 0.99 (`scripts/test_forecaster.py` ahora lo asegura con un `assert 10 <= days <= 16`).
+- **26 purchases** con día relativo a hoy, monto y descripción fijos (total **$4,377** / 30 días ≈ 36 % del ingreso; alimentos+súper ≈ 61 %, transporte ≈ 18 %, proporciones ENIGH decil III).
+- **2 depósitos de nómina** ($6,141 c/u, hace 18 y 3 días = $12,282/mes). El forecaster infiere la siguiente quincena en 12 días.
+- **4 bills** ($11,000/mes): Renta 7,000 día 1 · CFE e Internet 650 día 15 · Casa de Empeño 2,200 día 10 · **Abono Coppel 1,150 día 5**.
+- **Egresos mensuales $15,377 > ingresos $12,282**: déficit estructural de ~$3,100/mes. Saldo hoy $2,055 → **insolvencia el día 11 (un día ANTES de la quincena)**; con la nómina sube a ~$5,900, la renta del día 1 lo deja en ~−$2,000 y el abono Coppel del día 5 en ~−$3,700; mínimo proyectado ~−$9,600 en diciembre. `scripts/test_forecaster.py` asegura `10 <= days_remaining <= 16`.
 
-Idempotencia: customer/cuentas/merchants/bills por nombre; purchases/deposits por `(fecha, parte entera del monto, descripción)`. **Las fechas son relativas al día del seed**: si se detectan movimientos de otro día el seed se detiene y pide `python scripts/seed.py --reset` (borra purchases/deposits y resiembra). **Correrlo la mañana del pitch**, seguido de `python scripts/sync.py <account_id>`.
+Idempotencia: customer/cuentas/merchants/bills por nombre; purchases/deposits por `(fecha, parte entera del monto, descripción)`. **Las fechas son relativas al día del seed**: si se detectan movimientos de otro día el seed se detiene y pide `python scripts/seed.py --reset`. Como **Nessie no permite borrar ni editar purchases** (todas las rutas `/purchases/{id}` responden 403) ni cambiar `balance` (el PUT lo ignora), `--reset` **borra y recrea la cuenta de cheques** (nuevo `account_id`) y reescribe `DEMO_ACCOUNT_ID` en `.env` y `NEXT_PUBLIC_DEMO_ACCOUNT_ID` en `web/.env.local`. Después: `python scripts/sync.py <id>` y reiniciar backend y `pnpm dev`.
+
+### Saldo y proyección (2026-09-12)
+
+- **`app/ledger.py`** — Nessie no mueve `account.balance` con deposits/purchases, así que el saldo se reconstruye: `saldo = saldo inicial + Σ depósitos − Σ compras − Σ bills ya cobradas` (una ocurrencia por bill entre el primer movimiento e hoy). El saldo inicial de la cuenta demo viene de `DEMO_CHECKING_BALANCE` (Nessie no deja cambiarlo). Lo usan `/summary`, `/accounts` y `/forecast`.
+- **`app/forecaster.py` reescrito**: proyección **día a día a 90 días** — gasto variable = pendiente de la regresión lineal (sklearn) sobre compras acumuladas; **bills como cargos puntuales en su `recurring_date`** (la renta pega de golpe el día 1); **quincenas futuras inferidas del historial de depósitos** (intervalo mediano + monto). Insolvencia = primer día con saldo negativo. `ForecastMetrics` ahora trae también `next_paycheck_date`, `paycheck_amount`, `lowest_balance(_date)` y `projection[]` (fecha, saldo, eventos del día) para graficar.
+- **Prompt del agente enriquecido**: saldo hoy, próxima nómina, punto más bajo, movimientos fijos de 30 días, bills mensuales y compras con comercio [categoría]. Las acciones de Gemini ahora citan comercios reales ("reduce Tacos El Güero y OXXO", "negocia con Coppel antes del 5 de octubre").
 
 ### Endpoints de lectura para la UI (nuevos)
 
@@ -78,6 +84,8 @@ Todos `{"data", "meta"}`, `meta.currency = "MXN"`, fechas ISO, montos positivos 
 - `GET /transactions/{account_id}?limit=20&type=all|purchase|deposit` → purchases + deposits mezclados DESC: `id, type, direction, amount, date, merchant, category, description, status`. Los depósitos salen como merchant "Nómina - Maquilas del Norte SA de CV", categoría "Ingresos".
 - `GET /bills/{account_id}` → bills con `next_payment_date`, `days_until`, `category` (Vivienda / Servicios y facturas / Deuda); `meta.monthly_total`.
 - `GET /summary/{account_id}` extendido (compatible): agrega `account_number_masked, money_in, money_out, deposit_count, money_in_goal (12,282), bills_monthly_total`; `meta.period` = **ventana móvil de 30 días** (no mes calendario, porque el seed es relativo a hoy).
+- `GET /purchases/{account_id}` → **todas** las compras con comercio/categoría + `merchants` (resumen por comercio: `total_spent`, `purchase_count`); `meta.total_spent`.
+- `GET /merchants` → catálogo completo de comercios con categoría.
 - CreditWise no tiene fuente en Nessie → sigue estático en el frontend.
 
 Fixtures de los 5 endpoints en `/fixtures` (ver su README).
@@ -107,14 +115,15 @@ Fixtures de los 5 endpoints en `/fixtures` (ver su README).
 ## Pendiente / próximo paso
 
 1. ~~Cerrar `perf/gemini-thinking-budget`~~ → el `thinking_budget=0` se revirtió (ver bug 11); la rama ya no aplica.
-2. **Conectar el frontend a los endpoints reales**: hoy el dashboard renderiza 100 % `web/lib/mockData.ts` (los componentes `BalanceCard`/`ForecastCard` que sí llaman al backend no están montados). Mapeo: `recentTransactions` ← `/transactions?limit=7` · `upcomingTransactions` ← `/bills` · `balanceSummary` + sidebar ← `/accounts` · `spending` ← `/summary` (`money_in`, `money_in_goal`, `money_out`) · plan de rescate ← `/forecast`. Además cambiar los 4 helpers `currency()` de `en-US/USD` a `es-MX/MXN`, y derivar `initial` (primera letra del merchant) y `badgeColor` (por `category`) en el cliente.
+2. **Dashboard `/` conectado al backend (2026-09-12)** vía `web/lib/api.ts` (fetchers tipados + formato es-MX/MXN + badge por categoría): Mi Balance ← `/summary.balance` · Transacciones recientes ← `/purchases` (7 más recientes) · Próximas ← `/bills` · Ingresos ← `/summary.money_in` de `money_in_goal` (= `DEMO_MONTHLY_INCOME`) · Egresos ← `/summary.total_spent`. `mockData.ts` solo conserva `creditWise`. "Ver todo" lleva a `/transacciones` (todas las compras, filtro por categoría, desglose por comercio) y `/proximas` (pagos programados con "en N días" y saldo después de pagos). Se quitaron los menús "···" de todas las tarjetas (`CardMenu.tsx` eliminado). **Pendiente**: montar `ForecastCard` (`/forecast`, el "momento de valor") en el dashboard — ahora `forecast.projection[]` permite graficar el saldo día a día con los eventos (nómina, renta) marcados; las 4 páginas nuevas (`/ahorros`, `/tarjetas-de-credito`, `/prestamos`, `/recompensas`) siguen formateando en USD y pegan a Nessie en vivo (no pasan por cache) — necesitan `NEXT_PUBLIC_DEMO_CUSTOMER_ID` en `web/.env.local`.
 3. **Prompt del agente**: `get_purchases` ya devuelve `merchant_name` y `category`; `agent._build_prompt` todavía manda solo `description`. Cambiar a `"- {date}: {merchant_name} [{category}] (${amount})"` y agregar una línea con los ingresos de los últimos 30 días. Requiere `?force_refresh=true` y regenerar el fixture.
-4. **El forecaster ignora la nómina**: con los depósitos ahora visibles en la UI, un juez puede preguntar por qué la proyección no cuenta la siguiente quincena. Restarla mueve `days_remaining`; decidir antes del pitch.
-5. `/actions` (bloquear categoría, mover a ahorro) **no está implementado todavía**. Ya existe la base: cuenta Savings sembrada y `nessie_client.create_transfer` (Checking → Savings). CORS solo permite `GET`; habrá que abrir `POST`.
-6. Diseño real de frontend: sigue pendiente, el actual es solo funcional.
+4. ~~Recalibrar la narrativa~~ → hecho (dataset con egresos > ingresos, insolvencia el día 11).
+5. ~~El forecaster ignora la nómina~~ → hecho (quincenas inferidas + bills puntuales, proyección día a día).
+6. `/actions` (bloquear categoría, mover a ahorro) **no está implementado todavía**. Ya existe la base: cuenta Savings sembrada y `nessie_client.create_transfer` (Checking → Savings). CORS solo permite `GET`; habrá que abrir `POST`.
+7. Diseño real de frontend: sigue pendiente, el actual es solo funcional.
 
 ## Importante para el día del pitch
 
-**Resiembra relativo a hoy**: `python scripts/seed.py --reset && python scripts/sync.py 258f79f0-ff2e-49ca-b9f4-d658317e0168` (las fechas del dataset son relativas al día del seed; sin esto los días a la insolvencia van subiendo lentamente, 13 → 14 a los 5 días).
+**Resiembra relativo a hoy**: `python scripts/seed.py --reset` (recrea la cuenta y actualiza `.env` + `web/.env.local` solo) → `python scripts/sync.py <id nuevo>` → reiniciar `uvicorn` y `pnpm dev`. Las fechas del dataset son relativas al día del seed; sin esto la quincena inferida y los días a la insolvencia se corren.
 
 **Calienta el cache antes de salir al escenario**: haz una sola llamada a `GET /forecast/{account_id}` (o abre el frontend una vez, cuando esté conectado) unos minutos antes de presentar. Eso guarda el plan de rescate en Postgres, y durante la demo en vivo la respuesta será de ~2 segundos en vez de 10-13. Si necesitas forzar un plan nuevo (por ejemplo, después de cambiar el prompt), usa `?force_refresh=true`.

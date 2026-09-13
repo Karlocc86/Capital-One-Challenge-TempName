@@ -14,17 +14,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.config import DEMO_ACCOUNT_ID as _ENV_ACCOUNT_ID
 from app.forecaster import FinancialForecaster
 
-DEMO_ACCOUNT_ID = _ENV_ACCOUNT_ID or "258f79f0-ff2e-49ca-b9f4-d658317e0168"
+DEMO_ACCOUNT_ID = _ENV_ACCOUNT_ID or "98f6dab5-9b48-4ebe-8f71-13e7308d5b2d"
 
 
 def case_datos_normales() -> None:
-    from app.cache import get_account, get_bills, get_purchases
+    from app.cache import get_account, get_bills, get_deposits, get_purchases
+    from app.ledger import compute_balance
 
     account = get_account(DEMO_ACCOUNT_ID)
     purchases = get_purchases(DEMO_ACCOUNT_ID)
+    deposits = get_deposits(DEMO_ACCOUNT_ID)
     bills = get_bills(DEMO_ACCOUNT_ID)
+    # Mismo saldo que usa /forecast: inicial + depósitos − compras − bills cobradas.
+    balance = compute_balance(account["balance"], deposits, purchases, bills)["balance"]
 
-    forecaster = FinancialForecaster(account["balance"], purchases, bills)
+    forecaster = FinancialForecaster(balance, purchases, bills, deposits)
     result = forecaster.calculate_forecast()
     print(f"[caso a: datos normales] {result}")
     # El dataset demo (app/demo_data.py) está calibrado para ~13 días; si esto

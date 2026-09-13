@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
-import CardMenu from "@/components/CardMenu";
 
 type Loan = {
   _id: string;
@@ -56,7 +55,6 @@ export default function PrestamosPage() {
         <div className="rounded-2xl bg-white p-6 shadow-card">
           <div className="flex items-center justify-between">
             <h1 className="text-base font-bold text-slate-900">Préstamos</h1>
-            <CardMenu />
           </div>
 
           {state.status === "loading" && (
