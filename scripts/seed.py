@@ -8,7 +8,7 @@ monto y día relativo a hoy escritos a mano. Así el forecast siempre proyecta
 lo mismo (~9 días a la insolvencia) y la UI siempre muestra las mismas
 transacciones.
 
-Perfil demo: "Ricardo Torres", trabajador de ingreso medio-bajo en Monterrey.
+Perfil demo: "Ricardo Torres Moscada", trabajador de ingreso medio-bajo en Monterrey.
 Los montos están calibrados con datos reales del INEGI (ENIGH 2024, decil
 III de ingreso: $36,845 MXN de ingreso corriente trimestral promedio, ~$12,282
 MXN/mes) — no son números arbitrarios, representan un perfil de vulnerabilidad
