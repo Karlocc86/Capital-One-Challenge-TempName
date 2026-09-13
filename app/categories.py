@@ -57,7 +57,21 @@ def spending_breakdown(purchases: list[dict], bills: list[dict], discretionary_b
         ranked = sorted(acc.items(), key=lambda kv: sum(kv[1]), reverse=True)[:n]
         return [(name, round(sum(v), 2), len(v)) for name, v in ranked]
 
+    # Áreas de bienestar: transporte (moverse), salud (farmacia) y salidas
+    # sociales (restaurantes de comida chatarra: alitas, tacos con amigos).
+    transport = [p for p in purchases if p.get("merchant_category") == "Transporte y combustible"]
+    health = [p for p in purchases if p.get("merchant_category") == "Salud"]
+    outings = [p for p in purchases if p.get("merchant_category") == JUNK_FOOD]
+
     return {
+        "transport_total": round(sum(p["amount"] for p in transport), 2),
+        "transport_top": _top(transport, "merchant_name"),
+        "health_total": round(sum(p["amount"] for p in health), 2),
+        "health_count": len(health),
+        "health_items": [p.get("description") for p in health if p.get("description")][:5],
+        "outings_total": round(sum(p["amount"] for p in outings), 2),
+        "outings_count": len(outings),
+        "outings_items": [f"{p.get('merchant_name')}: {p.get('description')}" for p in outings if p.get("description")][:5],
         "junk_food_total": round(sum(p["amount"] for p in junk), 2),
         "junk_food_count": len(junk),
         "junk_food_top": _top(junk, "merchant_name"),

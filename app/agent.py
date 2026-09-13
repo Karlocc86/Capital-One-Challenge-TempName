@@ -21,14 +21,19 @@ from app.schemas import FinancialRescuePlan, ForecastMetrics, Recommendation, Se
 
 MODEL = "gemini-flash-lite-latest"
 
-# Cada área debe aparecer exactamente una vez en el plan.
+# Cada área debe aparecer exactamente una vez en el plan. El enfoque es
+# bienestar integral: en cada área hay un ángulo de dinero y uno de vida.
 AREAS = (
-    ("fin_de_mes", "Análisis de fin de mes: ¿llega a fin de mes a este paso? ¿cuánto tiene que recortar al mes?"),
-    ("suscripciones", "Suscripciones prescindibles: cuáles cancelar o pausar primero y cuánto libera."),
-    ("comida_chatarra", "Comida chatarra: reducirla por dinero Y por salud (menciona el beneficio de salud concreto, sin sermonear)."),
-    ("gastos_hormiga", f"Gastos hormiga (compras chicas < ${HORMIGA_MAX:.0f} en OXXO/tiendas que se acumulan sin sentirse): cómo cortarlos."),
-    ("ahorro", "Ahorro: qué hacer con lo que sobre cuando cierre un mes en positivo (apartar automático a la cuenta de Ahorro)."),
-    ("integral", "Recomendación integral: el cambio de fondo más importante para su situación (uno solo, el que más mueve la aguja)."),
+    ("paso_de_hoy", "Tu paso de hoy: UNA sola acción chica y concreta para hacer HOY (≤ 15 minutos) que baje la ansiedad de estar a pocos días de cero y devuelva sensación de control. No es un recorte más: es el primer paso."),
+    ("fin_de_mes", "Fin de mes: ¿llega a fin de mes a este paso? ¿cuánto tiene que recortar al mes? Dilo con claridad y sin alarmismo; la tranquilidad de saber el número exacto es parte del bienestar."),
+    ("suscripciones", "Suscripciones prescindibles: cuáles pausar/cancelar primero y cuánto libera. Ángulo de vida: menos pantallas = más descanso y sueño; sugiere quedarse con UNA que de verdad disfrute."),
+    ("comida_chatarra", "Comida chatarra: reducirla por dinero Y por salud (energía, digestión, sodio/grasa, riesgo cardiovascular). Propón el reemplazo concreto, no solo la prohibición."),
+    ("gastos_hormiga", f"Gastos hormiga (compras chicas < ${HORMIGA_MAX:.0f} en OXXO/tiendas): son hábitos automáticos, no falta de voluntad. Propón un reemplazo (termo de café, botella de agua) y un tope semanal en efectivo."),
+    ("vida_social", "Vida social: las salidas con amigos (alitas, partido) importan para su bienestar emocional — NO recomiendes aislarse. Propón cómo mantener la convivencia gastando menos (partido en casa, cooperacha, un plato compartido)."),
+    ("movimiento", "Movimiento: con base en su gasto de transporte (camión, gasolina), propón sustituir tramos cortos por caminar o bici. Ángulo de vida: actividad física diaria, menos estrés; ángulo de dinero: cuánto ahorra."),
+    ("salud_preventiva", "Salud preventiva: si gasta seguido en farmacia (medicamentos, analgésicos), sugiere atender la causa (chequeo gratuito en IMSS/centro de salud, sueño, alimentación) antes de que se vuelva un gasto mayor. Sin diagnosticar."),
+    ("ahorro", "Ahorro: qué hacer con lo que sobre cuando cierre un mes en positivo (apartar automático a su cuenta de Ahorro el día de la nómina). Ángulo de vida: un colchón es dormir tranquilo."),
+    ("integral", "Recomendación integral: el cambio de fondo más importante para su situación (uno solo, el que más mueve la aguja), conectando dinero y bienestar."),
 )
 
 
@@ -40,14 +45,16 @@ class CognitiveFinancialAgent:
                 "GEMINI_API_KEY no está configurada. Sácala gratis en "
                 "aistudio.google.com/apikey y ponla en .env."
             )
-        # attempts=1 (sin reintentos) + timeout corto: si Gemini está lento o
-        # devuelve 503 ("alta demanda", real en el tier gratis), preferimos
-        # caer al plan de respaldo en ~10s en vez de esperar ~30s a que el
-        # SDK agote sus reintentos por default — crítico en vivo en el pitch.
+        # attempts=1 (sin reintentos): si Gemini devuelve 503 ("alta demanda",
+        # real en el tier gratis) caemos al plan de respaldo en vez de esperar
+        # a que el SDK agote sus reintentos. El timeout es generoso (40 s)
+        # porque el plan completo (10 recomendaciones con bienestar) tarda
+        # ~15-25 s en flash-lite; en el pitch nunca se llama en vivo: el plan
+        # se calienta antes y se sirve desde rescue_plans_cache en ~2 s.
         self.client = genai.Client(
             api_key=api_key,
             http_options=types.HttpOptions(
-                timeout=15_000,
+                timeout=40_000,
                 retry_options=types.HttpRetryOptions(attempts=1),
             ),
         )
@@ -100,7 +107,7 @@ class CognitiveFinancialAgent:
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=SectionInsights,
-                    thinking_config=types.ThinkingConfig(thinking_budget=0),
+                    # Sin thinking_config: ver nota en generate_rescue_plan (400 con este modelo).
                 ),
             )
             return response.parsed, True
@@ -118,9 +125,11 @@ class CognitiveFinancialAgent:
             or "  - (sin compras)"
         )
         return (
-            "Eres un asesor financiero cercano y humano. Con base en estos datos del "
+            "Eres un acompañante de bienestar integral, cercano y humano (sabes de finanzas, "
+            "pero te importa cómo vive la persona). Todos los montos están en pesos "
+            "mexicanos (MXN); nunca digas dólares. Con base en estos datos del "
             "usuario, genera UNA conclusión breve (máximo 1 frase, lenguaje simple, "
-            "sin tecnicismos, tuteando) por cada sección del dashboard:\n\n"
+            "sin tecnicismos, tuteando, sin culpa) por cada sección del dashboard:\n\n"
             f"- Saldo en checking: ${summary['checking_balance']:.2f}\n"
             f"- Gasto total ({summary['purchase_count']} compras): ${summary['total_spent']:.2f}\n"
             f"- Gasto por categoría:\n{categories_text}\n"
@@ -228,28 +237,43 @@ class CognitiveFinancialAgent:
             f"{breakdown['junk_food_count']} compras → {_top(breakdown['junk_food_top'])}"
             f"\n- Gastos hormiga (< ${HORMIGA_MAX:.0f}, últimos 30 días): ${breakdown['hormiga_total']:,.2f} en "
             f"{breakdown['hormiga_count']} compras → {_top(breakdown['hormiga_top'])}"
+            f"\n- Salidas sociales (restaurantes): ${breakdown['outings_total']:,.2f} en {breakdown['outings_count']} → "
+            + ("; ".join(breakdown["outings_items"]) or "ninguna")
+            + f"\n- Transporte: ${breakdown['transport_total']:,.2f} → {_top(breakdown['transport_top'])}"
+            f"\n- Salud/farmacia: ${breakdown['health_total']:,.2f} en {breakdown['health_count']} compras → "
+            + (", ".join(breakdown["health_items"]) or "ninguna")
         )
 
         areas = "\n".join(f'- area="{key}": {what}' for key, what in AREAS)
 
         return (
-            "Eres un asesor financiero para una persona de ingreso medio-bajo en México "
-            "(montos en pesos mexicanos). Con base en este análisis, genera un plan de "
-            "rescate breve, concreto y realista.\n\n"
+            "Eres un acompañante de bienestar integral para una persona de ingreso medio-bajo "
+            "en México (montos en pesos mexicanos). Sabes de finanzas personales, pero tu "
+            "objetivo no es solo que le alcance el dinero: es que viva mejor — con menos "
+            "ansiedad, más salud, mejor descanso y sin perder a su gente. El dinero es el "
+            "medio; el bienestar es el fin.\n\n"
+            "Tono: cercano y cálido, tuteando, como un amigo que sabe del tema y se preocupa "
+            "por él. Sin culpa, sin sermones, sin frases motivacionales vacías. Reconoce lo "
+            "que ya hace bien (p. ej. paga su renta, tiene ingreso estable) antes de pedir "
+            "cambios. Cada recomendación debe ser realista para su vida real, no ideal.\n\n"
             "## Situación\n" + "\n".join(context) + "\n\n"
-            "## Diagnóstico por área\n" + diagnosis + "\n\n"
+            "## Diagnóstico por área (últimos 30 días)\n" + diagnosis + "\n\n"
             "## Pagos fijos mensuales\n" + bills_summary + "\n\n"
             "## Compras recientes (comercio [categoría])\n" + purchases_summary + "\n\n"
             "## Qué generar\n"
-            "1. summary: 1-2 frases con la situación (usa los números).\n"
-            "2. insolvency_warning: advertencia clara para el usuario (fecha, días, qué la provoca).\n"
-            "3. recommendations: EXACTAMENTE 6, una por área, en este orden de áreas:\n"
+            "1. summary: 2 frases: cómo está (con los números clave) y un mensaje de que tiene "
+            "salida — sin minimizar ni dramatizar.\n"
+            "2. insolvency_warning: advertencia clara y humana (fecha, días, qué la provoca), "
+            "seguida de una frase que baje la ansiedad: qué es lo primero que haría hoy.\n"
+            f"3. recommendations: EXACTAMENTE {len(AREAS)}, una por área, cubriendo todas estas áreas:\n"
             f"{areas}\n"
-            "Cada recomendación: title (≤ 8 palabras, imperativo), description (1-2 frases, "
-            "concreta, con montos y nombres reales del historial), estimated_impact (ej. "
-            '"+$1,034/mes", "retrasa insolvencia 6 días"), priority (1 = la más importante; '
-            "asigna prioridades distintas del 1 al 6 según cuánto mueve la aguja para ESTE usuario). "
-            "Sé conciso: nada de relleno ni frases motivacionales."
+            "Cada recomendación: title (≤ 8 palabras, imperativo y cálido), description (1-2 "
+            "frases concretas, con montos y nombres reales del historial), wellbeing_benefit "
+            "(1 frase: qué gana en salud, descanso, relaciones o tranquilidad — específico, "
+            "no genérico), estimated_impact (ej. \"+$1,034/mes\", \"retrasa insolvencia 6 "
+            "días\", \"+30 min de caminata al día\"), priority (1 = la más importante; "
+            f"prioridades distintas del 1 al {len(AREAS)} según cuánto mejora la vida de ESTE "
+            "usuario, no solo su saldo). Sé conciso: nada de relleno."
         )
 
     def _fallback_plan(self, forecast: ForecastMetrics, breakdown: dict) -> FinancialRescuePlan:
@@ -277,41 +301,70 @@ class CognitiveFinancialAgent:
             month_end_desc = "No hay suficientes datos para proyectar el fin de mes."
 
         subs = breakdown.get("subscriptions", [])
+        junk = breakdown.get("junk_food_total", 0)
+        hormiga_total = breakdown.get("hormiga_total", 0)
+        outings = breakdown.get("outings_total", 0)
+        transport = breakdown.get("transport_total", 0)
+        health = breakdown.get("health_total", 0)
         recs = [
             Recommendation(
-                area="fin_de_mes", title="Recorta el déficit mensual", description=month_end_desc,
-                estimated_impact=f"-${me.monthly_deficit:,.0f}/mes de déficit" if me else "Variable", priority=1,
+                area="paso_de_hoy", title="Hoy: pausa una suscripción y respira",
+                description="Entra a la app de la suscripción que menos uses y pásala a pausa. Son 5 minutos y ya diste el primer paso.",
+                wellbeing_benefit="Recuperar sensación de control baja la ansiedad más que cualquier número.",
+                estimated_impact="+$99–$499/mes desde hoy", priority=1,
             ),
             Recommendation(
-                area="suscripciones", title="Cancela las suscripciones prescindibles",
-                description="Pausa hoy " + (", ".join(n for n, _ in subs) or "tus suscripciones de streaming/gym") + ".",
-                estimated_impact=f"+${breakdown.get('subscriptions_total', 0):,.0f}/mes", priority=2,
+                area="fin_de_mes", title="Conoce tu número y quítate el peso", description=month_end_desc,
+                wellbeing_benefit="Saber exactamente cuánto falta quita la incertidumbre que no te deja dormir.",
+                estimated_impact=f"-${me.monthly_deficit:,.0f}/mes de déficit" if me else "Variable", priority=2,
             ),
             Recommendation(
-                area="comida_chatarra", title="Reduce la comida chatarra a la mitad",
-                description=(
-                    f"Gastaste ${breakdown.get('junk_food_total', 0):,.0f} en alitas, tacos y botanas este mes. "
-                    "Cocinar en casa baja el gasto y el consumo de sodio, grasa y azúcar."
-                ),
-                estimated_impact=f"+${breakdown.get('junk_food_total', 0) / 2:,.0f}/mes", priority=3,
+                area="suscripciones", title="Quédate con una suscripción, pausa el resto",
+                description="Pausa " + (", ".join(n for n, _ in subs) or "tus suscripciones de streaming/gym") + " y conserva solo la que de verdad disfrutes.",
+                wellbeing_benefit="Menos pantallas en la noche = mejor sueño y más tiempo para ti.",
+                estimated_impact=f"+${breakdown.get('subscriptions_total', 0):,.0f}/mes", priority=3,
             ),
             Recommendation(
-                area="gastos_hormiga", title="Frena los gastos hormiga",
-                description=(
-                    f"{breakdown.get('hormiga_count', 0)} compras chicas sumaron ${breakdown.get('hormiga_total', 0):,.0f}. "
-                    "Ponte un tope semanal en efectivo para OXXO y antojos."
-                ),
-                estimated_impact=f"+${breakdown.get('hormiga_total', 0) / 2:,.0f}/mes", priority=4,
+                area="comida_chatarra", title="Cambia la mitad de las alitas por comida casera",
+                description=f"Gastaste ${junk:,.0f} en alitas, tacos y botanas este mes. Empieza con dos cenas en casa a la semana.",
+                wellbeing_benefit="Menos sodio y grasa: más energía en el día y menos malestar estomacal.",
+                estimated_impact=f"+${junk / 2:,.0f}/mes", priority=4,
+            ),
+            Recommendation(
+                area="gastos_hormiga", title="Lleva termo y botella: adiós hormigas",
+                description=f"{breakdown.get('hormiga_count', 0)} compras chicas en OXXO sumaron ${hormiga_total:,.0f}. Café de casa en termo y agua en botella cubren la mayoría.",
+                wellbeing_benefit="Rompes el piloto automático del antojo; menos azúcar y cafeína de más.",
+                estimated_impact=f"+${hormiga_total * 0.7:,.0f}/mes", priority=5,
+            ),
+            Recommendation(
+                area="vida_social", title="Sigue viendo a tus amigos, cambia el plan",
+                description=f"Las salidas sumaron ${outings:,.0f}. Propón el partido en casa con cooperacha o compartir un plato: la convivencia se queda, el gasto baja.",
+                wellbeing_benefit="Tu gente es tu red de apoyo; aislarte para ahorrar sale más caro emocionalmente.",
+                estimated_impact=f"+${outings / 2:,.0f}/mes", priority=6,
+            ),
+            Recommendation(
+                area="movimiento", title="Camina los tramos cortos",
+                description=f"Gastas ${transport:,.0f} en camión y gasolina. Sustituye los trayectos de menos de 2 km por caminata o bici.",
+                wellbeing_benefit="30 minutos de caminata al día bajan el estrés y mejoran el sueño.",
+                estimated_impact=f"+${transport * 0.3:,.0f}/mes y +30 min de actividad", priority=7,
+            ),
+            Recommendation(
+                area="salud_preventiva", title="Atiende la causa, no solo el síntoma",
+                description=f"Llevas ${health:,.0f} en farmacia este mes (analgésicos, medicamento). Agenda un chequeo gratuito en tu clínica del IMSS o centro de salud.",
+                wellbeing_benefit="Detectar a tiempo evita un gasto grande y te da paz mental.",
+                estimated_impact="Evita gastos médicos mayores", priority=8,
             ),
             Recommendation(
                 area="ahorro", title="Aparta el sobrante el día de la nómina",
                 description="Cuando un mes cierre en positivo, mueve el excedente a tu cuenta de Ahorro el mismo día que cae la quincena.",
-                estimated_impact="Colchón de 1 renta en ~6 meses", priority=5,
+                wellbeing_benefit="Un colchón de una renta es dormir tranquilo aunque algo falle.",
+                estimated_impact="Colchón de 1 renta en ~6 meses", priority=9,
             ),
             Recommendation(
-                area="integral", title="Alinea tus gastos fijos con tu ingreso",
+                area="integral", title="Alinea tus gastos fijos con tu vida",
                 description="Tus pagos fijos más la comida fuera superan lo que ganas; sin bajar uno de los dos, ningún ajuste chico alcanza.",
-                estimated_impact="Cierra el déficit estructural", priority=6,
+                wellbeing_benefit="Vivir dentro de tu ingreso es la base de todo lo demás: salud, descanso y relaciones.",
+                estimated_impact="Cierra el déficit estructural", priority=10,
             ),
         ]
         return FinancialRescuePlan(

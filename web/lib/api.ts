@@ -105,10 +105,14 @@ export type ForecastMetrics = {
 };
 
 export type RecommendationArea =
+  | "paso_de_hoy"
   | "fin_de_mes"
   | "suscripciones"
   | "comida_chatarra"
   | "gastos_hormiga"
+  | "vida_social"
+  | "movimiento"
+  | "salud_preventiva"
   | "ahorro"
   | "integral";
 
@@ -116,15 +120,21 @@ export type Recommendation = {
   area: RecommendationArea;
   title: string;
   description: string;
+  /** Qué gana en salud, descanso, relaciones o tranquilidad (enfoque de bienestar integral). */
+  wellbeing_benefit: string;
   estimated_impact: string;
   priority: number;
 };
 
 export const RECOMMENDATION_AREA_LABELS: Record<RecommendationArea, string> = {
+  paso_de_hoy: "Tu paso de hoy",
   fin_de_mes: "Fin de mes",
   suscripciones: "Suscripciones",
   comida_chatarra: "Comida chatarra",
   gastos_hormiga: "Gastos hormiga",
+  vida_social: "Vida social",
+  movimiento: "Movimiento",
+  salud_preventiva: "Salud preventiva",
   ahorro: "Ahorro",
   integral: "Integral",
 };

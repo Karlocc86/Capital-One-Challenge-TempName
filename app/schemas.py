@@ -41,22 +41,29 @@ class ForecastMetrics(BaseModel):
     projection: list[ProjectionPoint] = []
 
 
-# Áreas fijas de recomendación: el agente debe cubrir todas, en este orden de
-# importancia por default (la prioridad final la decide él según los números).
+# Áreas fijas de recomendación: el agente debe cubrir todas, exactamente una
+# vez cada una. La prioridad final la decide él según los números. El enfoque
+# es bienestar integral: cada área tiene un ángulo de dinero y uno de vida
+# (salud, descanso, relaciones, tranquilidad).
 RecommendationArea = Literal[
-    "fin_de_mes",
-    "suscripciones",
-    "comida_chatarra",
-    "gastos_hormiga",
-    "ahorro",
-    "integral",
+    "paso_de_hoy",        # una sola acción chica para hoy: bajar la ansiedad y recuperar control
+    "fin_de_mes",         # ¿llega a fin de mes? ¿cuánto recortar?
+    "suscripciones",      # streaming/gym prescindibles: dinero + tiempo de pantalla/descanso
+    "comida_chatarra",    # alitas, tacos, botanas: dinero + salud
+    "gastos_hormiga",     # compras chicas en OXXO: dinero + hábitos automáticos
+    "vida_social",        # salidas con amigos: no aislarse, convivir gastando menos
+    "movimiento",         # transporte: caminar/bici en tramos cortos = ahorro + actividad física
+    "salud_preventiva",   # farmacia recurrente: chequeo gratuito antes de que sea gasto mayor
+    "ahorro",             # apartar el sobrante: colchón = tranquilidad
+    "integral",           # el cambio de fondo que más mueve la aguja
 ]
 
 
 class Recommendation(BaseModel):
     area: RecommendationArea
-    title: str  # ≤ 8 palabras, imperativo ("Cancela 4 suscripciones")
-    description: str  # 1-2 frases concretas, con montos y nombres reales
+    title: str  # ≤ 8 palabras, imperativo y cálido ("Cancela 4 suscripciones esta semana")
+    description: str  # 1-2 frases concretas, con montos y nombres reales del historial
+    wellbeing_benefit: str  # 1 frase: qué gana en salud, descanso, relaciones o tranquilidad
     estimated_impact: str  # ej. "+$1,034/mes" o "retrasa insolvencia 6 días"
     priority: int  # 1 = lo más importante
 

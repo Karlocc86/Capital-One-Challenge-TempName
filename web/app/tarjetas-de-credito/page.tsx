@@ -10,6 +10,7 @@ type CreditCardAccount = {
   total_spent: number;
   purchase_count: number;
   account_number: string;
+  decorative?: boolean; // tarjeta fija de demo (ver app/demo_data.py), no existe en Nessie
 };
 
 type State =

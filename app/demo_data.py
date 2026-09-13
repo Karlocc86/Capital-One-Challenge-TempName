@@ -115,6 +115,22 @@ BILLS = [
     ("Smart Fit", "Smart Fit Gimnasio", 499.00, 7),
 ]
 
+# Tarjeta de crédito decorativa: el customer demo no tiene cuentas "Credit
+# Card" en Nessie, y la pantalla de tarjetas vacía se ve pobre en el pitch.
+# /credit-cards la devuelve SIEMPRE (marcada con decorative=True) junto con
+# las reales, si algún día las hay. No se siembra en Nessie ni entra al cache.
+DEMO_DECORATIVE_CREDIT_CARD = {
+    "_id": "demo-credit-card-decorativa",
+    "type": "Credit Card",
+    "nickname": "Capital One Platinum",
+    "account_number": "5412751234567842",
+    "balance": 8000.00,  # línea de crédito disponible
+    "rewards": 0,
+    "total_spent": 0.0,
+    "purchase_count": 0,
+    "decorative": True,
+}
+
 # Bills que el usuario puede cancelar sin consecuencias graves (para /actions
 # y para que el agente las distinga de renta/servicios).
 DISCRETIONARY_BILLS = {"Netflix", "HBO Max", "Disney+", "Spotify", "Amazon Prime", "Xbox Game Pass", "Smart Fit"}

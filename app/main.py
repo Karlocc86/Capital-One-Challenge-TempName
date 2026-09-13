@@ -15,7 +15,7 @@ from app.cache import (
     get_purchases,
     save_rescue_plan,
 )
-from app.demo_data import DEMO_EMPLOYER, DEMO_MONTHLY_INCOME, DISCRETIONARY_BILLS
+from app.demo_data import DEMO_DECORATIVE_CREDIT_CARD, DEMO_EMPLOYER, DEMO_MONTHLY_INCOME, DISCRETIONARY_BILLS
 from app.forecaster import FinancialForecaster
 from app.ledger import compute_balance
 
@@ -363,9 +363,12 @@ def credit_cards(customer_id: str):
                 detail=f"No se pudo obtener purchases de la account {account['_id']} de Nessie: {e.body}",
             )
         total_spent = sum(purchase["amount"] for purchase in purchases)
-        cards.append({**account, "total_spent": round(total_spent, 2), "purchase_count": len(purchases)})
+        cards.append({**account, "total_spent": round(total_spent, 2), "purchase_count": len(purchases), "decorative": False})
 
-    return {"data": cards, "meta": {}}
+    # La decorativa siempre va al final (ver app/demo_data.py).
+    cards.append(dict(DEMO_DECORATIVE_CREDIT_CARD))
+
+    return {"data": cards, "meta": {"decorative_count": 1}}
 
 
 @app.get("/loans/{customer_id}")
@@ -455,7 +458,7 @@ async def insights(customer_id: str, force_refresh: bool = False):
     all_loans = []
     for a in accounts:
         try:
-            all_loans.extend(get_loans_for_account(a["_id"]))
+            all_loans.extend(nessie_get_loans_for_account(a["_id"]))
         except NessieError as e:
             raise HTTPException(
                 status_code=404,

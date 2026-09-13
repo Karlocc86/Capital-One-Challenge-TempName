@@ -16,10 +16,14 @@ type State =
   | { status: "success"; data: Forecast };
 
 const areaClasses: Record<RecommendationArea, string> = {
+  paso_de_hoy: "bg-sky-100 text-sky-700",
   fin_de_mes: "bg-red-100 text-red-700",
   suscripciones: "bg-indigo-100 text-indigo-700",
   comida_chatarra: "bg-rose-100 text-rose-700",
   gastos_hormiga: "bg-amber-100 text-amber-700",
+  vida_social: "bg-pink-100 text-pink-700",
+  movimiento: "bg-lime-100 text-lime-700",
+  salud_preventiva: "bg-teal-100 text-teal-700",
   ahorro: "bg-emerald-100 text-emerald-700",
   integral: "bg-brand-100 text-brand-700",
 };
@@ -108,6 +112,7 @@ export default function ForecastCard() {
                     </span>
                     <p className="mt-1 text-sm font-semibold text-slate-900">{rec.title}</p>
                     <p className="text-sm text-slate-600">{rec.description}</p>
+                    <p className="mt-1 text-xs text-sky-700">{rec.wellbeing_benefit}</p>
                   </div>
                   <span className="shrink-0 text-right text-xs font-semibold text-brand-700">
                     {rec.estimated_impact}
