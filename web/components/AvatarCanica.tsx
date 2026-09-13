@@ -160,12 +160,10 @@ export default function AvatarCanica() {
 
     const interval = window.setInterval(() => {
       const total = stopsRef.current.length;
-      setStopIndex((i) => {
-        const nextIndex = (i + 1) % total;
-        // Al volver a la casita (o si la casita es la única parada) rota el mensaje.
-        if (stopsRef.current[nextIndex]?.kind === "home") setHomeMsgIndex((m) => m + 1);
-        return nextIndex;
-      });
+      const nextIndex = (index + 1) % total;
+      // Al volver a la casita (o si la casita es la única parada) rota el mensaje.
+      if (stopsRef.current[nextIndex]?.kind === "home") setHomeMsgIndex((m) => m + 1);
+      setStopIndex(nextIndex);
     }, STOP_DURATION_MS);
 
     const reposition = () => moveTo(stopIndex % stopsRef.current.length, false);
