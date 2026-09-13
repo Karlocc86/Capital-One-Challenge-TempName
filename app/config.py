@@ -28,3 +28,13 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 # los endpoints reciben el account_id en la URL; esto lo usan los scripts de
 # prueba para no repetir el literal.
 DEMO_ACCOUNT_ID = os.getenv("DEMO_ACCOUNT_ID")
+
+# Orígenes permitidos por CORS, separados por coma. Default cubre dev local;
+# en producción se sobreescribe con el dominio real del frontend desplegado.
+FRONTEND_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "FRONTEND_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
+    ).split(",")
+    if origin.strip()
+]

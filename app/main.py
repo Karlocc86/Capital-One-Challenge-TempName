@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from app.agent import CognitiveFinancialAgent
+from app.config import FRONTEND_ORIGINS
 from app.cajitas import (
     create_cajita,
     get_active_total,
@@ -46,7 +47,7 @@ app = FastAPI(title="Fin de Mes API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=FRONTEND_ORIGINS,
     allow_methods=["GET", "POST"],  # POST: crear cajitas y pedir/confirmar retiros
     allow_headers=["*"],
 )
