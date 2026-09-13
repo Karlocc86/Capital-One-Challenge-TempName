@@ -1,6 +1,6 @@
 /**
  * Único punto de contacto del frontend con el backend (FastAPI). Nunca se
- * llama a Nessie desde aquí: todo pasa por http://localhost:8000.
+ * llama a Nessie desde aquí: todo pasa por el backend (NEXT_PUBLIC_API_URL).
  *
  * Todas las respuestas vienen envueltas en { data, meta }. Los montos llegan
  * positivos con `direction: "in" | "out"`, las fechas en ISO (YYYY-MM-DD) y
@@ -152,10 +152,67 @@ export type Forecast = {
   rescue_plan: RescuePlan;
 };
 
+// ---------- Cajitas (app/cajitas.py, app/schemas.py) ----------
+
+export type CajitaProposal = {
+  expense_name: string;
+  suggested_amount: number;
+  reserve_by_date: string;
+  reasoning: string;
+  cta_label: string;
+};
+
+/** Saludo del Agente Guía al abrir el dashboard (GET /guide/welcome/{account_id}). */
+export type WelcomeMessage = {
+  greeting: string;
+  tone: "positive" | "neutral" | "warning";
+  cajita_proposals: CajitaProposal[];
+};
+
+export type Cajita = {
+  id: number;
+  account_id: string;
+  name: string;
+  target_amount: number;
+  linked_expense_name: string;
+  reserve_date: string;
+  status: "pending" | "active" | "released";
+  was_early_withdrawal: boolean;
+  days_early_at_withdrawal: number | null;
+  created_at: string;
+};
+
+export type WithdrawalWarning = {
+  message: string;
+  days_early: number;
+  severity: "low" | "medium" | "high";
+  reminder: string;
+  requires_double_confirmation: boolean;
+};
+
+export type WithdrawalResult = {
+  released: boolean;
+  warning: WithdrawalWarning | null;
+  cajita: Cajita;
+};
+
 // ---------- Fetchers ----------
 
 async function getJson<T>(path: string): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, { cache: "no-store" });
+  if (!res.ok) {
+    throw new Error(`Backend respondió ${res.status} en ${path}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+async function postJson<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+    cache: "no-store",
+  });
   if (!res.ok) {
     throw new Error(`Backend respondió ${res.status} en ${path}`);
   }
@@ -176,6 +233,39 @@ export const fetchBills = (accountId = DEMO_ACCOUNT_ID) =>
 export const fetchForecast = (accountId = DEMO_ACCOUNT_ID, forceRefresh = false) =>
   getJson<Envelope<Forecast>>(
     `/forecast/${accountId}${forceRefresh ? "?force_refresh=true" : ""}`,
+  );
+
+export const fetchWelcome = (accountId = DEMO_ACCOUNT_ID) =>
+  getJson<Envelope<WelcomeMessage>>(`/guide/welcome/${accountId}`);
+
+export const fetchCajitas = (accountId = DEMO_ACCOUNT_ID) =>
+  getJson<Envelope<Cajita[], { count: number; active_total: number; currency: string }>>(
+    `/cajitas/${accountId}`,
+  );
+
+export const createCajita = (input: {
+  name: string;
+  target_amount: number;
+  linked_expense_name: string;
+  reserve_date: string;
+  accountId?: string;
+}) =>
+  postJson<Envelope<Cajita, { created: boolean; currency: string }>>("/cajitas", {
+    account_id: input.accountId ?? DEMO_ACCOUNT_ID,
+    name: input.name,
+    target_amount: input.target_amount,
+    linked_expense_name: input.linked_expense_name,
+    reserve_date: input.reserve_date,
+  });
+
+export const requestCajitaWithdrawal = (cajitaId: number) =>
+  postJson<Envelope<WithdrawalResult, { days_early: number; currency: string }>>(
+    `/cajitas/${cajitaId}/request-withdrawal`,
+  );
+
+export const confirmCajitaWithdrawal = (cajitaId: number) =>
+  postJson<Envelope<Cajita, { days_early: number; currency: string }>>(
+    `/cajitas/${cajitaId}/confirm-withdrawal`,
   );
 
 // ---------- Formato (es-MX / MXN) ----------

@@ -93,6 +93,41 @@ pnpm dev                            # o `pnpm dev:clean` si .next quedó corrupt
 
 Abre [http://localhost:3000](http://localhost:3000).
 
+## Despliegue (Render + Vercel)
+
+La API corre en Render (Blueprint `render.yaml`) y el frontend en Vercel. Supabase y Nessie ya son servicios en la nube, así que la DB no cambia.
+
+### 1. API en Render
+
+1. Render → **New → Blueprint** → conectar este repo. Render lee `render.yaml` y crea el servicio `fin-de-mes-api`.
+2. Capturar las env vars que piden en el dashboard: `NESSIE_API_KEY`, `DATABASE_URL` (Supabase, Session pooler), `GEMINI_API_KEY`, `DEMO_ACCOUNT_ID`, `FRONTEND_ORIGINS` (de momento `http://localhost:3000`; se actualiza en el paso 3).
+3. Al terminar el deploy, probar `https://<api>.onrender.com/health` → `{"data":{"status":"ok"}}`.
+
+### 2. Web en Vercel
+
+1. Vercel → **Add New → Project** → importar el repo. **Root Directory: `web`** (Framework: Next.js, package manager pnpm se detecta por `pnpm-lock.yaml`).
+2. Env vars: `NEXT_PUBLIC_API_URL=https://<api>.onrender.com` (sin `/` final), `NEXT_PUBLIC_DEMO_ACCOUNT_ID`, `NEXT_PUBLIC_DEMO_CUSTOMER_ID`.
+3. Deploy. Anotar el dominio (`https://<app>.vercel.app`).
+
+### 3. Cerrar el círculo (CORS)
+
+En Render → `fin-de-mes-api` → Environment: `FRONTEND_ORIGINS=https://<app>.vercel.app` (varios dominios separados por coma; incluir el de preview si se usa). Render redeploya solo.
+
+### Rutina de la mañana del pitch (nube)
+
+```bash
+python scripts/seed.py --reset      # local: Nessie y Supabase ya son cloud
+python scripts/sync.py <account_id nuevo>
+```
+
+Luego: Vercel → Settings → Environment Variables → `NEXT_PUBLIC_DEMO_ACCOUNT_ID=<nuevo>` → **Redeploy** (las `NEXT_PUBLIC_*` se hornean en el build). En Render actualizar `DEMO_ACCOUNT_ID` (solo lo usan los scripts; no es bloqueante). Calentar el plan:
+
+```bash
+curl "https://<api>.onrender.com/forecast/<account_id nuevo>?force_refresh=true"
+```
+
+**Free tier de Render duerme tras 15 min sin tráfico**: el primer request tarda 30–60 s. Abrir la app 2–3 minutos antes de presentar.
+
 ## Estructura
 
 ```

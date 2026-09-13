@@ -1,0 +1,31 @@
+# Blueprint de Render para el backend (FastAPI). Render lo detecta al conectar
+# el repo (New > Blueprint). El frontend (web/) se despliega aparte en Vercel.
+services:
+  - type: web
+    name: fin-de-mes-api
+    runtime: python
+    plan: free
+    rootDir: .
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      # Fijar 3.12: pandas/scikit-learn/psycopg2-binary tienen wheels estables
+      # aquí; con el default de Render (3.13) el build ha fallado antes.
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: NESSIE_BASE_URL
+        value: https://api.nessieisreal.com
+      # Se capturan en el dashboard de Render al crear el servicio:
+      - key: NESSIE_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: DEMO_ACCOUNT_ID
+        sync: false
+      # Dominio del frontend en Vercel, separado por coma si hay varios,
+      # p. ej. https://fin-de-mes.vercel.app,https://fin-de-mes-git-master-usuario.vercel.app
+      - key: FRONTEND_ORIGINS
+        sync: false
