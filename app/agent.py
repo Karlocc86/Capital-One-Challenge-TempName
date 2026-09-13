@@ -136,16 +136,16 @@ class CognitiveFinancialAgent:
             insolvency_line = "No se proyecta insolvencia con la tendencia actual."
 
         return (
-            "Eres un asesor financiero. Con base en este análisis, genera un plan de "
-            "rescate breve y accionable para el usuario.\n\n"
+            "Eres un asesor de bienestar integral. Sé extremadamente conciso (lectura menor a 10 segundos).\n\n"
             f"{insolvency_line}\n\n"
-            "Historial de compras recientes:\n"
+            "Historial de compras:\n"
             f"{purchases_summary}\n\n"
-            "Genera: un resumen breve (summary), una advertencia de insolvencia en "
-            "lenguaje claro para el usuario (insolvency_warning), y 2-3 acciones "
-            "concretas recomendadas (recommended_actions), cada una con su "
-            "descripción y el impacto estimado en texto simple "
-            '(ej. "+$50/mes" o "retrasa insolvencia 5 días").'
+            "REGLAS:\n"
+            "1. Salud: Si gasta en comida chatarra/alcohol, sugiere cortarlo advirtiendo que daña salud y cartera.\n"
+            "2. Transporte: Es semi-esencial. Advierte no gastar en lujos o se quedará sin dinero para transporte.\n"
+            "3. Inversión: Si generas un ahorro, recomiéndale invertirlo a fin de mes en fondos seguros y líquidos (ej. CETES).\n"
+            "4. Publicidad: En un consejo, inserta publicidad directa recomendando tiendas alternativas (ej. 'Ahorra comprando en Bodega Aurrera / Tiendas 3B').\n\n"
+            "Genera: resumen breve (summary), advertencia de insolvencia (insolvency_warning), y 2-3 acciones recomendadas (muy cortas) con su impacto estimado."
         )
 
     def _fallback_plan(self, forecast: ForecastMetrics) -> FinancialRescuePlan:

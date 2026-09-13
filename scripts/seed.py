@@ -3,7 +3,7 @@ Siembra un customer demo, una account Checking, ~15 purchases de los últimos
 30 días y bills recurrentes. Idempotente: si ya existe el customer demo
 (buscado por nombre), reutiliza sus IDs en vez de duplicar.
 
-Perfil demo: "Ricardo Torres", trabajador de ingreso medio-bajo en Monterrey.
+Perfil demo: "Ricardo Torres Moscada", trabajador de ingreso medio-bajo en Monterrey.
 Los montos están calibrados con datos reales del INEGI (ENIGH 2024, decil
 III de ingreso: $36,845 MXN de ingreso corriente trimestral promedio, ~$12,282
 MXN/mes) — no son números arbitrarios, representan un perfil de vulnerabilidad
@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app import nessie_client as nc
 
 DEMO_FIRST_NAME = "Ricardo"
-DEMO_LAST_NAME = "Torres"
+DEMO_LAST_NAME = "Torres Moscada"
 DEMO_ACCOUNT_NICKNAME = "Cuenta Principal"
 DEMO_MERCHANT_NAME = "Comercio Local Monterrey"
 
@@ -35,7 +35,6 @@ PURCHASE_CATEGORIES = [
     ("Transporte (camión urbano)", 20.0, 45.0),
     ("Transporte (camión urbano)", 20.0, 45.0),
     ("Transporte (camión urbano)", 20.0, 45.0),
-    ("Gasolina", 200.0, 400.0),
     ("Comida en la calle (tacos, comida corrida)", 40.0, 90.0),
     ("Comida en la calle (tacos, comida corrida)", 40.0, 90.0),
     ("Comida en la calle (tacos, comida corrida)", 40.0, 90.0),
