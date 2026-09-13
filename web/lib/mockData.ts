@@ -5,5 +5,5 @@ export const creditWise = {
   score: 790,
   maxScore: 850,
   label: "Excelente",
-  updated: "24 nov 2024",
+  updated: "10 sep 2026",
 };

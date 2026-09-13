@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import CreditWiseCard from "@/components/CreditWiseCard";
 
 type NavItem = {
   label: string;
@@ -80,6 +79,18 @@ const navItems: NavItem[] = [
       </svg>
     ),
   },
+  {
+    label: "Cajitas",
+    href: "/cajitas",
+    chipColor: "bg-cyan-500",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M21 8 12 3 3 8l9 5 9-5Z" />
+        <path d="M3 8v8l9 5 9-5V8" />
+        <path d="M12 13v8" />
+      </svg>
+    ),
+  },
 ];
 
 export default function Sidebar() {
@@ -115,24 +126,9 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* "Casita" de la canica: el hueco libre arriba de CreditWise. Aquí muestra
+      {/* "Casita" de la canica: el hueco libre bajo la navegación. Aquí muestra
           los insights que no pertenecen a ninguna sección visible en la página. */}
       <div className="min-h-[7.5rem] flex-1" data-avatar-home />
-
-      <CreditWiseCard />
-
-      <div className="px-3 py-6">
-        <button
-          type="button"
-          className="flex w-full items-center gap-3 rounded-lg border border-white/20 px-3 py-2.5 text-left text-sm font-medium text-white/90 transition-colors hover:bg-brand-600"
-        >
-          <svg {...iconProps}>
-            <circle cx="12" cy="12" r="9" />
-            <path d="M12 8v8M8 12h8" />
-          </svg>
-          <span>Abrir cuenta nueva</span>
-        </button>
-      </div>
     </aside>
     </div>
   );

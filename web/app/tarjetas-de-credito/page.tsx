@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
+import CreditWiseCard from "@/components/CreditWiseCard";
+import { formatMXN } from "@/lib/api";
 
 type CreditCardAccount = {
   _id: string;
@@ -17,9 +19,6 @@ type State =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "success"; cards: CreditCardAccount[] };
-
-const currency = (value: number) =>
-  value.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 export default function TarjetasDeCreditoPage() {
   const [state, setState] = useState<State>({ status: "loading" });
@@ -51,24 +50,35 @@ export default function TarjetasDeCreditoPage() {
             <h1 className="text-base font-bold text-slate-900">Tarjetas de Crédito</h1>
           </div>
 
+          <p className="mt-5 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Salud crediticia
+          </p>
+          <div className="mt-2">
+            <CreditWiseCard />
+          </div>
+
+          <p className="mt-6 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Tus tarjetas
+          </p>
+
           {state.status === "loading" && (
-            <p className="mt-4 text-sm text-slate-400">Cargando tarjetas...</p>
+            <p className="mt-2 text-sm text-slate-400">Cargando tarjetas...</p>
           )}
 
           {state.status === "error" && (
-            <p className="mt-4 text-sm text-red-600">
+            <p className="mt-2 text-sm text-red-600">
               No se pudieron cargar tus tarjetas: {state.message}
             </p>
           )}
 
           {state.status === "success" && state.cards.length === 0 && (
-            <p className="mt-4 text-sm text-slate-500">
+            <p className="mt-2 text-sm text-slate-500">
               Todavía no tienes tarjetas de crédito.
             </p>
           )}
 
           {state.status === "success" && state.cards.length > 0 && (
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
               {state.cards.map((card) => (
                 <div key={card._id} className="rounded-xl border border-slate-100 p-4">
                   <div className="flex items-center gap-3">
@@ -85,13 +95,13 @@ export default function TarjetasDeCreditoPage() {
 
                   <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-sm">
                     <span className="text-slate-500">Saldo disponible</span>
-                    <span className="font-medium text-slate-800">{currency(card.balance)}</span>
+                    <span className="font-medium text-slate-800">{formatMXN(card.balance)}</span>
                   </div>
 
                   <div className="mt-2 flex items-center justify-between text-sm">
                     <span className="text-slate-500">Gasto total</span>
                     <span className="font-medium text-slate-800">
-                      {currency(card.total_spent)} · {card.purchase_count} compras
+                      {formatMXN(card.total_spent)} · {card.purchase_count} compras
                     </span>
                   </div>
                 </div>
