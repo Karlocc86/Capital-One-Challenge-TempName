@@ -1,3 +1,4 @@
+import AvatarCanica from "@/components/AvatarCanica";
 import Header from "@/components/Header";
 import Sidebar from "@/components/Sidebar";
 
@@ -15,6 +16,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
+
+      <AvatarCanica />
     </div>
   );
 }

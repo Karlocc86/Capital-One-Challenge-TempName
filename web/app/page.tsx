@@ -10,8 +10,12 @@ export default function Home() {
     <AppShell>
       <div className="flex flex-1 flex-col gap-6 lg:flex-row lg:items-start">
         <div className="flex flex-1 flex-col gap-6 lg:max-w-2xl">
-          <BalanceOverviewCard />
-          <TransactionList title="Transacciones recientes" transactions={recentTransactions} />
+          <div data-avatar-target="balance">
+            <BalanceOverviewCard />
+          </div>
+          <div data-avatar-target="transactions">
+            <TransactionList title="Transacciones recientes" transactions={recentTransactions} />
+          </div>
         </div>
 
         <div className="flex w-full flex-col gap-6 lg:w-80 lg:shrink-0">
@@ -20,8 +24,12 @@ export default function Home() {
             transactions={upcomingTransactions}
             showViewAll
           />
-          <BankingFeaturesCard />
-          <SpendingCard />
+          <div data-avatar-target="banking_features">
+            <BankingFeaturesCard />
+          </div>
+          <div data-avatar-target="spending">
+            <SpendingCard />
+          </div>
         </div>
       </div>
     </AppShell>
