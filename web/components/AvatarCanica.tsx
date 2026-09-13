@@ -48,13 +48,11 @@ const HOME_KEY_ORDER: InsightKey[] = [
 ];
 
 const STOP_DURATION_MS = 5000;
-const TELEPORT_OUT_MS = 260;
 const MARBLE_SIZE = 26;
 const BUBBLE_WIDTH = 224; // w-56
 const BUBBLE_GAP = 8; // separación entre canica y bubble
 const EDGE_MARGIN = 12; // el bubble nunca queda a menos de esto del borde de pantalla
 
-type Phase = "idle" | "out" | "in";
 type Stop = { kind: "home"; el: HTMLElement } | { kind: "widget"; el: HTMLElement; key: InsightKey };
 type Pos = { x: number; y: number; stop: Stop };
 type Bubble = { left: number; top: number; width: number };
@@ -65,7 +63,6 @@ export default function AvatarCanica() {
   const [stops, setStops] = useState<Stop[]>([]);
   const [stopIndex, setStopIndex] = useState(0);
   const [homeMsgIndex, setHomeMsgIndex] = useState(0);
-  const [phase, setPhase] = useState<Phase>("idle");
   const [pos, setPos] = useState<Pos | null>(null);
   const [bubble, setBubble] = useState<Bubble | null>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
@@ -91,7 +88,6 @@ export default function AvatarCanica() {
   useEffect(() => {
     setStopIndex(0);
     setHomeMsgIndex(0);
-    setPhase("idle");
 
     let tries = 0;
     let raf = 0;
@@ -125,7 +121,7 @@ export default function AvatarCanica() {
   // 3. Posiciona la canica: centrada en la casita, o en la esquina superior
   // derecha del widget. El bubble se acomoda después (paso 4) midiendo su
   // tamaño real para nunca salirse de la pantalla.
-  const moveTo = (index: number, animate: boolean) => {
+  const moveTo = (index: number) => {
     const stop = stops[index];
     if (!stop) return;
     const rect = stop.el.getBoundingClientRect();
@@ -133,18 +129,7 @@ export default function AvatarCanica() {
       stop.kind === "home"
         ? { x: rect.left + rect.width / 2, y: rect.top + Math.min(rect.height * 0.3, 32), stop }
         : { x: rect.right, y: rect.top, stop };
-
-    if (!animate) {
-      setPos(next);
-      setPhase("idle");
-      return;
-    }
-
-    setPhase("out");
-    window.setTimeout(() => {
-      setPos(next);
-      setPhase("in");
-    }, TELEPORT_OUT_MS);
+    setPos(next);
   };
 
   const stopsRef = useRef(stops);
@@ -156,7 +141,7 @@ export default function AvatarCanica() {
       return;
     }
     const index = stopIndex % stops.length;
-    moveTo(index, pos !== null);
+    moveTo(index);
 
     const interval = window.setInterval(() => {
       const total = stopsRef.current.length;
@@ -168,7 +153,7 @@ export default function AvatarCanica() {
       });
     }, STOP_DURATION_MS);
 
-    const reposition = () => moveTo(stopIndex % stopsRef.current.length, false);
+    const reposition = () => moveTo(stopIndex % stopsRef.current.length);
     window.addEventListener("scroll", reposition, true);
     window.addEventListener("resize", reposition);
 
@@ -230,17 +215,8 @@ export default function AvatarCanica() {
       className="pointer-events-none fixed left-0 top-0 z-[999]"
       style={{ transform: `translate(${pos.x}px, ${pos.y}px)` }}
     >
-      {phase === "in" && (
-        <span
-          className="canica-ring absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-brand-400"
-          style={{ width: MARBLE_SIZE * 2, height: MARBLE_SIZE * 2, left: 0, top: 0 }}
-        />
-      )}
-
       <div
-        className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full shadow-lg ${
-          phase === "out" ? "canica-out" : phase === "in" ? "canica-in" : ""
-        }`}
+        className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full shadow-lg"
         style={{
           width: MARBLE_SIZE,
           height: MARBLE_SIZE,
@@ -250,22 +226,20 @@ export default function AvatarCanica() {
         aria-hidden
       />
 
-      {phase !== "out" && (
-        <div
-          ref={bubbleRef}
-          className="absolute rounded-xl bg-slate-900 px-3 py-2 text-xs text-white shadow-xl"
-          style={{
-            left: bubble?.left ?? -BUBBLE_WIDTH / 2,
-            top: bubble?.top ?? MARBLE_SIZE / 2 + BUBBLE_GAP,
-            width: bubble?.width ?? BUBBLE_WIDTH,
-            visibility: bubble ? "visible" : "hidden",
-          }}
-          role="status"
-          aria-live="polite"
-        >
-          {message}
-        </div>
-      )}
+      <div
+        ref={bubbleRef}
+        className="absolute rounded-xl bg-slate-900 px-3 py-2 text-xs text-white shadow-xl"
+        style={{
+          left: bubble?.left ?? -BUBBLE_WIDTH / 2,
+          top: bubble?.top ?? MARBLE_SIZE / 2 + BUBBLE_GAP,
+          width: bubble?.width ?? BUBBLE_WIDTH,
+          visibility: bubble ? "visible" : "hidden",
+        }}
+        role="status"
+        aria-live="polite"
+      >
+        {message}
+      </div>
     </div>
   );
 }
