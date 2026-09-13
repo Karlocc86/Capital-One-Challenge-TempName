@@ -1,9 +1,14 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import CreditWiseCard from "@/components/CreditWiseCard";
 
 type NavItem = {
   label: string;
+  href: string;
   icon: React.ReactNode;
-  active?: boolean;
+  chipColor: string;
 };
 
 const iconProps = {
@@ -19,8 +24,9 @@ const iconProps = {
 
 const navItems: NavItem[] = [
   {
-    label: "Cuenta Checking... 0096",
-    active: true,
+    label: "Cuenta Checking",
+    href: "/",
+    chipColor: "bg-brand-700",
     icon: (
       <svg {...iconProps}>
         <rect x="3" y="6" width="18" height="13" rx="2" />
@@ -30,7 +36,9 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    label: "Ahorros... 3886",
+    label: "Ahorros",
+    href: "/ahorros",
+    chipColor: "bg-emerald-500",
     icon: (
       <svg {...iconProps}>
         <circle cx="12" cy="12" r="9" />
@@ -39,7 +47,9 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    label: "Tarjetas de Crédito... 9794",
+    label: "Tarjetas de Crédito",
+    href: "/tarjetas-de-credito",
+    chipColor: "bg-slate-500",
     icon: (
       <svg {...iconProps}>
         <rect x="2.5" y="5" width="19" height="14" rx="2.2" />
@@ -49,7 +59,9 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    label: "Préstamos... 2284",
+    label: "Préstamos",
+    href: "/prestamos",
+    chipColor: "bg-violet-500",
     icon: (
       <svg {...iconProps}>
         <path d="M4 21V9l8-6 8 6v12" />
@@ -59,6 +71,8 @@ const navItems: NavItem[] = [
   },
   {
     label: "Recompensas",
+    href: "/recompensas",
+    chipColor: "bg-amber-500",
     icon: (
       <svg {...iconProps}>
         <path d="M12 2 3 7l9 5 9-5-9-5Z" />
@@ -69,25 +83,33 @@ const navItems: NavItem[] = [
 ];
 
 export default function Sidebar() {
+  const pathname = usePathname();
+
   return (
     <aside className="hidden h-full w-64 shrink-0 flex-col bg-brand-sidebar text-white sm:flex">
       <div className="h-6" />
 
       <nav className="flex flex-col gap-1 overflow-y-auto px-3">
-        {navItems.map((item) => (
-          <button
-            key={item.label}
-            type="button"
-            className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
-              item.active
-                ? "bg-brand-400/40 font-semibold text-white"
-                : "font-medium text-brand-50/80 hover:bg-brand-600 hover:text-white"
-            }`}
-          >
-            {item.icon}
-            <span>{item.label}</span>
-          </button>
-        ))}
+        {navItems.map((item) => {
+          const active = pathname === item.href;
+
+          return (
+            <Link
+              key={item.label}
+              href={item.href}
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors ${
+                active
+                  ? "bg-white text-brand-700"
+                  : "text-brand-50/80 hover:bg-brand-600 hover:text-white"
+              }`}
+            >
+              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white ${item.chipColor}`}>
+                {item.icon}
+              </span>
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
       </nav>
 
       <div className="flex-1" />
