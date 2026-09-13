@@ -1,6 +1,6 @@
 """
-Checkpoint 3 de BACKEND.md: llama a CognitiveFinancialAgent con el forecast
-de los 3 casos del Checkpoint 2 y confirma que siempre regresa un
+Llama a CognitiveFinancialAgent con el forecast de distintos casos
+(datos normales, 1 solo dato, 0 datos) y confirma que siempre regresa un
 FinancialRescuePlan válido, incluso en el caso "sin datos" y cuando Gemini
 falla (key inválida).
 

@@ -1,5 +1,5 @@
 """
-Checkpoint 2 de BACKEND.md: prueba calculate_forecast() con (a) datos
+Prueba calculate_forecast() con (a) datos
 normales, (b) 1 solo dato, (c) 0 datos. Los tres casos deben responder
 sin excepción.
 

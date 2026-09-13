@@ -2,8 +2,6 @@
 
 Track B2C. Proyecta el saldo futuro del usuario a partir de sus movimientos bancarios y, a diferencia de un simple aviso, **acompaña**: un agente de bienestar integral (Gemini) convierte el forecast en un plan de 10 recomendaciones concretas —dinero, salud, descanso, vida social— que el avatar "canica" va narrando sobre el dashboard. Usa la API de Nessie (Capital One) como fuente de datos bancarios simulados.
 
-> Estado detallado, decisiones y pendientes: ver [STATUS.md](STATUS.md).
-
 ## Estado actual (13 de septiembre de 2026)
 
 **Funciona de punta a punta:** seed → Nessie → cache Postgres → ledger + forecast (sklearn) → agente (Gemini) → API → dashboard Next.js conectado a datos reales.
@@ -37,7 +35,7 @@ Nessie API → nessie_client.py → cache.py (Postgres) → ledger.py + categori
            → forecaster.py (sklearn) → agent.py (Gemini) → FastAPI {"data","meta"} → Next.js (web/lib/api.ts)
 ```
 
-El frontend nunca llama a Nessie directamente; todo pasa por el backend. `nessie_client.py` es el único módulo HTTP y no contiene lógica de negocio. Roadmap original del backend en [BACKEND.md](BACKEND.md).
+El frontend nunca llama a Nessie directamente; todo pasa por el backend. `nessie_client.py` es el único módulo HTTP y no contiene lógica de negocio.
 
 ## Cómo correr el proyecto
 
@@ -102,6 +100,4 @@ app/            backend FastAPI: nessie_client, cache, ledger, categories, forec
 scripts/        seed (--reset), init_db, sync y tests manuales de cada capa
 fixtures/       respaldo JSON de cada endpoint (incl. plan de bienestar) para demoar sin Nessie/Gemini en vivo
 web/            frontend Next.js: app/ (dashboard, transacciones, proximas, secciones), components/ (AvatarCanica, Dashboard...), lib/api.ts
-STATUS.md       estado del proyecto, decisiones y pendientes
-BACKEND.md      roadmap original del backend, por fases
 ```
