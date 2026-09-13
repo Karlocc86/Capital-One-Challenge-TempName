@@ -187,7 +187,9 @@ def sync_snapshot(account_id: str) -> None:
                     (customer_id, live_ids),
                 )
                 for (dead_id,) in cur.fetchall():
-                    for table in ("purchases_cache", "deposits_cache", "bills_cache", "rescue_plans_cache"):
+                    # `cajitas` también referencia accounts_cache: si la cuenta
+                    # muere (seed --reset), sus cajitas se van con ella.
+                    for table in ("purchases_cache", "deposits_cache", "bills_cache", "rescue_plans_cache", "cajitas"):
                         cur.execute(f"DELETE FROM {table} WHERE account_id = %s", (dead_id,))
                     cur.execute("DELETE FROM accounts_cache WHERE account_id = %s", (dead_id,))
 

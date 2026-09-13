@@ -2,9 +2,17 @@ from datetime import date, timedelta
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
 from app.agent import CognitiveFinancialAgent
-from app.cajitas import has_active_cajita_for_date
+from app.cajitas import (
+    create_cajita,
+    get_active_total,
+    get_cajita,
+    get_cajitas_for_account,
+    has_active_cajita_for_date,
+    mark_released,
+)
 from app.categories import bill_category
 from app.cache import (
     get_account,
@@ -522,6 +530,107 @@ async def guide_welcome(account_id: str, force_refresh: bool = False):
             "insolvency_date": forecast_result.insolvency_date.isoformat() if forecast_result.insolvency_date else None,
             "days_remaining": forecast_result.days_remaining,
         },
+    }
+
+
+# ----------------------------------------------------------------- Cajitas
+# Registro propio en Postgres (app/cajitas.py); no mueve dinero en Nessie.
+
+
+class CajitaCreateRequest(BaseModel):
+    account_id: str
+    name: str = Field(min_length=1)
+    target_amount: float = Field(gt=0)
+    linked_expense_name: str = Field(min_length=1)  # nickname de la bill ("Renta", "Servicios")
+    reserve_date: date  # fecha en que se necesita el dinero de verdad
+
+
+def _load_cajita(cajita_id: int):
+    cajita = get_cajita(cajita_id)
+    if cajita is None:
+        raise HTTPException(status_code=404, detail=f"No existe la cajita {cajita_id}.")
+    return cajita
+
+
+@app.post("/cajitas")
+def cajitas_create(body: CajitaCreateRequest):
+    """
+    Crea una Cajita (el usuario aceptó la propuesta del saludo). Idempotente:
+    si ya hay una ACTIVA con el mismo `linked_expense_name` para la cuenta,
+    regresa esa (meta.created = false) en vez de duplicarla.
+    """
+    _load_account(body.account_id)  # 404 si la cuenta no existe (y asegura el snapshot para la FK)
+    cajita, created = create_cajita(
+        body.account_id, body.name, body.target_amount, body.linked_expense_name, body.reserve_date
+    )
+    return {
+        "data": cajita.model_dump(mode="json"),
+        "meta": {"created": created, "currency": CURRENCY},
+    }
+
+
+@app.get("/cajitas/{account_id}")
+def cajitas_list(account_id: str):
+    """Cajitas de la cuenta (activas primero). meta.active_total es lo que hay que restar al saldo para el disponible."""
+    _load_account(account_id)
+    items = get_cajitas_for_account(account_id)
+    return {
+        "data": [c.model_dump(mode="json") for c in items],
+        "meta": {
+            "count": len(items),
+            "active_total": get_active_total(account_id),
+            "currency": CURRENCY,
+        },
+    }
+
+
+@app.post("/cajitas/{cajita_id}/request-withdrawal")
+async def cajitas_request_withdrawal(cajita_id: int):
+    """
+    Evalúa la solicitud de retiro. Si la fecha de uso ya llegó (hoy o antes),
+    libera directo sin fricción. Si es antes de tiempo, NO libera: regresa la
+    advertencia del Agente Guía para que el frontend la muestre y el usuario
+    confirme (doble confirmación si `requires_double_confirmation`).
+    """
+    cajita = _load_cajita(cajita_id)
+    if cajita.status != "active":
+        raise HTTPException(status_code=409, detail=f"La cajita {cajita_id} ya está {cajita.status}.")
+
+    today = date.today()
+    days_early = (cajita.reserve_date - today).days
+
+    if days_early <= 0:
+        released = mark_released(cajita_id, was_early_withdrawal=False, days_early=0)
+        return {
+            "data": {"released": True, "warning": None, "cajita": released.model_dump(mode="json")},
+            "meta": {"days_early": 0, "currency": CURRENCY},
+        }
+
+    agent = GuideAgent()
+    warning, _success = await agent.generate_withdrawal_warning(cajita, days_early, today)
+    return {
+        "data": {"released": False, "warning": warning.model_dump(mode="json"), "cajita": cajita.model_dump(mode="json")},
+        "meta": {"days_early": days_early, "currency": CURRENCY},
+    }
+
+
+@app.post("/cajitas/{cajita_id}/confirm-withdrawal")
+def cajitas_confirm_withdrawal(cajita_id: int):
+    """
+    Libera el dinero: status → released y el monto vuelve a sumar al
+    disponible. Se llama después de que el usuario vio la advertencia y
+    confirmó. `days_early` se recalcula aquí (no se confía en el cliente)
+    para la métrica de "cuántas veces ignoró la advertencia".
+    """
+    cajita = _load_cajita(cajita_id)
+    if cajita.status != "active":
+        raise HTTPException(status_code=409, detail=f"La cajita {cajita_id} ya está {cajita.status}.")
+
+    days_early = max((cajita.reserve_date - date.today()).days, 0)
+    released = mark_released(cajita_id, was_early_withdrawal=days_early > 0, days_early=days_early)
+    return {
+        "data": released.model_dump(mode="json"),
+        "meta": {"days_early": days_early, "currency": CURRENCY},
     }
 
 

@@ -78,6 +78,11 @@ Verificación de cada capa: `python scripts/test_forecaster.py` (asegura insolve
 | `GET /forecast/{account_id}` | proyección a 90 días, insolvencia, próxima nómina, análisis de fin de mes + plan de 10 recomendaciones (`?force_refresh=true` regenera el plan) |
 | `GET /savings|credit-cards|loans|rewards/{customer_id}` | datos por sección para las páginas secundarias |
 | `GET /insights/{customer_id}` | un insight corto por widget para el avatar canica |
+| `GET /guide/welcome/{account_id}` | saludo del Agente Guía al abrir la app: tono según insolvencia próxima / quincena mañana / todo bien, con propuestas de Cajita para renta y servicios (`meta` trae quincena y gastos esenciales detectados) |
+| `POST /cajitas` | crea una Cajita (dinero apartado para un gasto esencial); idempotente por `linked_expense_name` |
+| `GET /cajitas/{account_id}` | cajitas de la cuenta; `meta.active_total` = lo que hay que restar al saldo para el disponible |
+| `POST /cajitas/{id}/request-withdrawal` | evalúa el retiro: si ya llegó la fecha libera directo; si es antes, regresa la advertencia del agente (`severity`, `requires_double_confirmation`) sin liberar |
+| `POST /cajitas/{id}/confirm-withdrawal` | libera el dinero y guarda si fue retiro anticipado y con cuántos días |
 
 ### Frontend (Next.js, puerto 3000)
 
