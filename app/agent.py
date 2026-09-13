@@ -10,7 +10,7 @@ from google import genai
 from google.genai import errors, types
 
 from app.config import GEMINI_API_KEY
-from app.schemas import Action, FinancialRescuePlan, ForecastMetrics
+from app.schemas import Action, FinancialRescuePlan, ForecastMetrics, SectionInsights
 
 MODEL = "gemini-flash-lite-latest"
 
@@ -62,6 +62,59 @@ class CognitiveFinancialAgent:
         except Exception as e:
             print(f"[agent] Error inesperado generando el plan ({type(e).__name__}): {e}")
             return self._fallback_plan(forecast), False
+
+    async def generate_section_insights(self, summary: dict) -> tuple[SectionInsights, bool]:
+        """Una conclusión corta por widget del dashboard, para el avatar canica.
+        Regresa (insights, exito) — mismo contrato que generate_rescue_plan."""
+        prompt = self._build_insights_prompt(summary)
+
+        try:
+            response = await self.client.aio.models.generate_content(
+                model=MODEL,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=SectionInsights,
+                    thinking_config=types.ThinkingConfig(thinking_budget=0),
+                ),
+            )
+            return response.parsed, True
+        except errors.APIError as e:
+            print(f"[agent] Gemini falló generando insights ({type(e).__name__}): {e}")
+            return self._fallback_insights(summary), False
+        except Exception as e:
+            print(f"[agent] Error inesperado generando insights ({type(e).__name__}): {e}")
+            return self._fallback_insights(summary), False
+
+    def _build_insights_prompt(self, summary: dict) -> str:
+        return (
+            "Eres un asesor financiero. Con base en estos datos del usuario, genera "
+            "UNA conclusión breve (máximo 1 frase, lenguaje simple, sin tecnicismos) "
+            "por cada sección del dashboard:\n\n"
+            f"- Saldo en checking: ${summary['checking_balance']:.2f}\n"
+            f"- Gasto total ({summary['purchase_count']} compras): ${summary['total_spent']:.2f}\n"
+            f"- Total en ahorros: ${summary['savings_total']:.2f}\n"
+            f"- Saldo en tarjetas de crédito: ${summary['credit_total']:.2f}\n"
+            f"- Préstamos activos: {summary['loan_count']}\n"
+            f"- Puntos de recompensa acumulados: {summary['rewards_total']}\n\n"
+            "Genera: balance (conclusión sobre el saldo), transactions (sobre el "
+            "historial de movimientos), spending (sobre el patrón de gasto), "
+            "banking_features (un tip general de uso del banco), savings (sobre "
+            "los ahorros), credit (sobre las tarjetas), loans (sobre los "
+            "préstamos), rewards (sobre las recompensas)."
+        )
+
+    def _fallback_insights(self, summary: dict) -> SectionInsights:
+        return SectionInsights(
+            balance=f"Tu saldo actual en checking es ${summary['checking_balance']:.2f}.",
+            transactions=f"Registramos {summary['purchase_count']} movimientos recientes.",
+            spending=f"Has gastado ${summary['total_spent']:.2f} en total.",
+            banking_features="Explora las demás secciones para ver el resto de tus productos.",
+            savings=f"Tienes ${summary['savings_total']:.2f} guardados en ahorros.",
+            credit=f"Tu saldo en tarjetas de crédito es ${summary['credit_total']:.2f}.",
+            loans=f"Tienes {summary['loan_count']} préstamo(s) registrado(s).",
+            rewards=f"Acumulas {summary['rewards_total']} puntos de recompensa.",
+        )
 
     def _build_prompt(self, forecast: ForecastMetrics, purchases: list[dict]) -> str:
         purchases_summary = (

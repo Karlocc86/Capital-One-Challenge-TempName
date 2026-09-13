@@ -64,7 +64,10 @@ def run() -> None:
         conn.commit()
     finally:
         release_connection(conn)
-    print("[init_db] Tablas listas: accounts_cache, purchases_cache, bills_cache")
+    print(
+        "[init_db] Tablas listas: accounts_cache, purchases_cache, bills_cache, "
+        "rescue_plans_cache"
+    )
 
 
 if __name__ == "__main__":

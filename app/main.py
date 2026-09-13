@@ -140,6 +140,77 @@ def rewards(customer_id: str):
     }
 
 
+# Cache en memoria del proceso (no Postgres) — se pierde al reiniciar el
+# servidor, pero evita llamar a Gemini de nuevo en cada cambio de página
+# durante la demo. No requiere tocar el esquema de Supabase.
+_insights_memory_cache: dict[str, dict] = {}
+
+
+@app.get("/insights/{customer_id}")
+async def insights(customer_id: str, force_refresh: bool = False):
+    """Una conclusión corta por widget del dashboard, para el avatar canica.
+    Agrega datos de todas las accounts del customer en un solo call a Gemini."""
+    try:
+        accounts = get_accounts_for_customer(customer_id)
+    except NessieError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No se pudo obtener accounts del customer {customer_id} de Nessie: {e.body}",
+        )
+
+    checking_account = next((a for a in accounts if a.get("type") == "Checking"), None)
+    savings_accounts = [a for a in accounts if a.get("type") == "Savings"]
+    credit_accounts = [a for a in accounts if a.get("type") == "Credit Card"]
+
+    checking_balance = 0.0
+    total_spent = 0.0
+    purchase_count = 0
+    if checking_account:
+        try:
+            account = get_account(checking_account["_id"])
+            purchases = get_purchases(checking_account["_id"])
+        except NessieError as e:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No se pudo obtener la account checking de Nessie: {e.body}",
+            )
+        checking_balance = account["balance"]
+        total_spent = sum(p["amount"] for p in purchases)
+        purchase_count = len(purchases)
+
+    all_loans = []
+    for a in accounts:
+        try:
+            all_loans.extend(get_loans_for_account(a["_id"]))
+        except NessieError as e:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No se pudo obtener loans de la account {a['_id']} de Nessie: {e.body}",
+            )
+
+    summary = {
+        "checking_balance": checking_balance,
+        "total_spent": round(total_spent, 2),
+        "purchase_count": purchase_count,
+        "savings_total": sum(a.get("balance", 0) for a in savings_accounts),
+        "credit_total": sum(a.get("balance", 0) for a in credit_accounts),
+        "loan_count": len(all_loans),
+        "rewards_total": sum(a.get("rewards", 0) for a in accounts),
+    }
+
+    insights_data = None if force_refresh else _insights_memory_cache.get(customer_id)
+    if insights_data:
+        print("[insights] usando insights cacheados en memoria (sin llamar a Gemini)")
+    else:
+        agent = CognitiveFinancialAgent()
+        section_insights, success = await agent.generate_section_insights(summary)
+        insights_data = section_insights.model_dump(mode="json")
+        if success:
+            _insights_memory_cache[customer_id] = insights_data
+
+    return {"data": insights_data, "meta": {}}
+
+
 @app.get("/forecast/{account_id}")
 async def forecast(account_id: str, force_refresh: bool = False):
     try:

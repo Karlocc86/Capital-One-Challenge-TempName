@@ -43,7 +43,7 @@ export default function RecompensasPage() {
   return (
     <AppShell>
       <div className="flex flex-1 flex-col gap-6">
-        <div className="rounded-2xl bg-white p-6 shadow-card">
+        <div className="rounded-2xl bg-white p-6 shadow-card" data-avatar-target="rewards">
           <div className="flex items-center justify-between">
             <h1 className="text-base font-bold text-slate-900">Recompensas</h1>
             <CardMenu />
