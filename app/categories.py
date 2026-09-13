@@ -28,6 +28,21 @@ JUNK_FOOD_KEYWORDS = (
 # Categorías de COMERCIO donde una compra chica se considera hormiga.
 HORMIGA_MERCHANT_CATEGORIES = {"Supermercado", "Comida y bebida", "Ropa", "Otros"}
 
+# Etiqueta de UI para las bills, por nickname. Las purchases traen la suya del
+# merchant; las bills en Nessie no tienen categoría.
+BILL_CATEGORIES = {
+    "Renta": "Vivienda",
+    "Servicios": "Servicios y facturas",
+}
+DISCRETIONARY_CATEGORY = "Suscripciones"
+
+
+def bill_category(nickname: str | None, discretionary_bills: set[str]) -> str:
+    """Categoría de una bill: por nickname conocido, si no "Suscripciones" para las prescindibles y "Servicios y facturas" para el resto."""
+    if nickname in BILL_CATEGORIES:
+        return BILL_CATEGORIES[nickname]
+    return DISCRETIONARY_CATEGORY if nickname in discretionary_bills else "Servicios y facturas"
+
 
 def classify_purchase(merchant_category: str | None, description: str | None) -> str:
     """Categoría final de una compra a partir de la del merchant y su descripción."""

@@ -1,10 +1,11 @@
-import calendar
 from datetime import date, timedelta
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.agent import CognitiveFinancialAgent
+from app.cajitas import has_active_cajita_for_date
+from app.categories import bill_category
 from app.cache import (
     get_account,
     get_accounts_for_customer,
@@ -16,8 +17,11 @@ from app.cache import (
     save_rescue_plan,
 )
 from app.demo_data import DEMO_DECORATIVE_CREDIT_CARD, DEMO_EMPLOYER, DEMO_MONTHLY_INCOME, DISCRETIONARY_BILLS
+from app.essential_expenses import EssentialExpenseDetector
 from app.forecaster import FinancialForecaster
-from app.ledger import compute_balance
+from app.guide_agent import GuideAgent
+from app.ledger import compute_balance, next_bill_date
+from app.payday import PaydayDetector
 
 # Las pantallas por tipo de cuenta (savings, credit-cards, loans, rewards)
 # pegan a Nessie en vivo; se importan con alias para no pisar las funciones
@@ -30,20 +34,12 @@ from app.nessie_client import get_purchases_for_account as nessie_get_purchases_
 CURRENCY = "MXN"
 SUMMARY_WINDOW_DAYS = 30
 
-# Etiqueta de UI para las bills, por nickname. Las purchases traen la suya del
-# merchant; las bills en Nessie no tienen categoría.
-BILL_CATEGORIES = {
-    "Renta": "Vivienda",
-    "Servicios": "Servicios y facturas",
-}
-DISCRETIONARY_CATEGORY = "Suscripciones"
-
 app = FastAPI(title="Fin de Mes API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_methods=["GET"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_methods=["GET", "POST"],  # POST: crear cajitas y pedir/confirmar retiros
     allow_headers=["*"],
 )
 
@@ -60,21 +56,6 @@ def _load_account(account_id: str) -> dict:
             status_code=404,
             detail=f"No se pudo obtener el account {account_id} de Nessie: {e.body}",
         )
-
-
-def _next_payment_date(recurring_date: int, today: date) -> date:
-    """
-    Próxima fecha en que se cobra una bill que se paga el día `recurring_date`
-    de cada mes, estrictamente después de hoy (la de hoy ya la descontó el
-    ledger, ver app/ledger.py).
-    """
-    year, month = today.year, today.month
-    if recurring_date <= today.day:
-        month += 1
-        if month > 12:
-            year, month = year + 1, 1
-    day = min(recurring_date, calendar.monthrange(year, month)[1])
-    return date(year, month, day)
 
 
 @app.get("/health")
@@ -227,7 +208,7 @@ def bills(account_id: str):
 
     data = []
     for b in get_bills(account_id):
-        next_date = _next_payment_date(b["recurring_date"], today)
+        next_date = next_bill_date(b["recurring_date"], today)
         data.append(
             {
                 "id": b["_id"],
@@ -237,7 +218,7 @@ def bills(account_id: str):
                 "recurring_date": b["recurring_date"],
                 "next_payment_date": next_date.isoformat(),
                 "days_until": (next_date - today).days,
-                "category": BILL_CATEGORIES.get(b["nickname"], DISCRETIONARY_CATEGORY if b["nickname"] in DISCRETIONARY_BILLS else "Servicios y facturas"),
+                "category": bill_category(b["nickname"], DISCRETIONARY_BILLS),
                 "discretionary": b["nickname"] in DISCRETIONARY_BILLS,
                 "status": b["status"],
                 "direction": "out",
@@ -488,6 +469,60 @@ async def insights(customer_id: str, force_refresh: bool = False):
             _insights_memory_cache[customer_id] = insights_data
 
     return {"data": insights_data, "meta": {}}
+
+
+# Saludo del Agente Guía: cache en memoria POR DÍA (el saludo depende de "¿la
+# quincena es mañana?", que cambia a diario) — misma idea que _insights_memory_cache,
+# pero con la fecha en la llave. Solo se guarda si Gemini respondió de verdad.
+_welcome_memory_cache: dict[tuple[str, str], dict] = {}
+
+
+@app.get("/guide/welcome/{account_id}")
+async def guide_welcome(account_id: str, force_refresh: bool = False):
+    """
+    Primer mensaje al abrir la app. Orquesta: cache → detectores (gastos
+    esenciales + quincena) + forecast cuantitativo → GuideAgent. Solo usa la
+    capa cuantitativa (FinancialForecaster), NO el plan de rescate de
+    /forecast: es otra llamada a Gemini y el saludo no la necesita.
+    """
+    account = _load_account(account_id)
+    purchases = get_purchases(account_id)
+    deposits = get_deposits(account_id)
+    bills = get_bills(account_id)
+    balance = compute_balance(account["balance"], deposits, purchases, bills)["balance"]
+    today = date.today()
+
+    forecast_result = FinancialForecaster(balance, purchases, bills, deposits, today).calculate_forecast()
+    essentials = EssentialExpenseDetector().detect(bills, today)
+    payday = PaydayDetector().detect(deposits, today)
+    covered = {e.name for e in essentials if has_active_cajita_for_date(account_id, e.name, e.next_due_date)}
+
+    cache_key = (account_id, today.isoformat())
+    welcome_data = None if force_refresh else _welcome_memory_cache.get(cache_key)
+    if welcome_data:
+        print("[guide] usando saludo cacheado en memoria (sin llamar a Gemini)")
+    else:
+        agent = GuideAgent()
+        welcome, success = await agent.generate_welcome(
+            forecast_result, essentials, payday, covered, balance=balance, today=today
+        )
+        welcome_data = welcome.model_dump(mode="json")
+        if success:
+            _welcome_memory_cache[cache_key] = welcome_data
+
+    return {
+        "data": welcome_data,
+        "meta": {
+            "currency": CURRENCY,
+            "as_of": today.isoformat(),
+            "balance": balance,
+            "payday": payday.model_dump(mode="json"),
+            "essential_expenses": [e.model_dump(mode="json") for e in essentials],
+            "covered_by_cajita": sorted(covered),
+            "insolvency_date": forecast_result.insolvency_date.isoformat() if forecast_result.insolvency_date else None,
+            "days_remaining": forecast_result.days_remaining,
+        },
+    }
 
 
 @app.get("/forecast/{account_id}")

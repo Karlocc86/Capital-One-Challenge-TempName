@@ -74,6 +74,69 @@ class FinancialRescuePlan(BaseModel):
     recommendations: list[Recommendation]
 
 
+class EssentialExpense(BaseModel):
+    """Gasto fijo con fecha de pago puntual (Renta, Servicios) — ver app/essential_expenses.py."""
+
+    name: str  # nickname de la bill ("Renta", "Servicios"): la llave estable que liga una Cajita
+    payee: str | None = None  # nombre para mostrar ("Renta Departamento", "CFE e Internet")
+    category: str
+    amount: float
+    recurring_date: int  # día del mes en que se cobra
+    next_due_date: date
+
+
+class PaydayInfo(BaseModel):
+    """Próximo depósito de nómina esperado — ver app/payday.py."""
+
+    next_payday_date: date
+    days_until_payday: int
+    amount: float
+    is_estimated: bool  # True si se infirió con <2 depósitos o con el fallback calendario
+
+
+class CajitaProposal(BaseModel):
+    """Propuesta del GuideAgent de apartar dinero para un gasto esencial próximo."""
+
+    expense_name: str
+    suggested_amount: float
+    reserve_by_date: str
+    reasoning: str
+    cta_label: str
+
+
+class WelcomeMessage(BaseModel):
+    """Mensaje de bienvenida al abrir la app — ver app/guide_agent.py."""
+
+    greeting: str
+    tone: Literal["positive", "neutral", "warning"]
+    cajita_proposals: list[CajitaProposal] = []
+
+
+class WithdrawalWarning(BaseModel):
+    """Advertencia al pedir retirar dinero de una Cajita antes de tiempo."""
+
+    message: str
+    days_early: int
+    severity: Literal["low", "medium", "high"]
+    reminder: str
+    requires_double_confirmation: bool
+
+
+class CajitaOut(BaseModel):
+    """Forma de respuesta de la API para una Cajita (ver app/cajitas.py)."""
+
+    id: int
+    account_id: str
+    name: str
+    target_amount: float
+    linked_expense_name: str
+    reserve_date: date
+    status: Literal["pending", "active", "released"]
+    was_early_withdrawal: bool
+    days_early_at_withdrawal: int | None
+    created_at: str
+
+
 class SectionInsights(BaseModel):
     """Una conclusión corta (1 frase) por widget del dashboard — las usa el
     avatar canica para mostrar un análisis distinto en cada parada.

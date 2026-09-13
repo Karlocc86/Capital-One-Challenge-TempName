@@ -41,6 +41,21 @@ def bill_charges(bills: list[dict], start: date, end: date) -> list[tuple[date, 
     return charges
 
 
+def next_bill_date(recurring_date: int, today: date) -> date:
+    """
+    Próxima fecha en que se cobra una bill que se paga el día `recurring_date`
+    de cada mes, estrictamente después de hoy (la de hoy ya la descontó
+    compute_balance). La usan /bills y el detector de gastos esenciales.
+    """
+    year, month = today.year, today.month
+    if recurring_date <= today.day:
+        month += 1
+        if month > 12:
+            year, month = year + 1, 1
+    day = min(recurring_date, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
 def compute_balance(
     opening_balance: float,
     deposits: list[dict],

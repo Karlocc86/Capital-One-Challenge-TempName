@@ -1,7 +1,7 @@
 """
 Crea (si no existen) las tablas de cache en Postgres: accounts_cache,
 purchases_cache, bills_cache, rescue_plans_cache, merchants_cache,
-deposits_cache. Idempotente.
+deposits_cache — y la tabla propia `cajitas`. Idempotente.
 
 Uso: python scripts/init_db.py
 """
@@ -82,6 +82,23 @@ CREATE INDEX IF NOT EXISTS purchases_cache_account_date_idx
     ON purchases_cache (account_id, purchase_date DESC);
 CREATE INDEX IF NOT EXISTS deposits_cache_account_date_idx
     ON deposits_cache (account_id, transaction_date DESC);
+
+-- Cajitas: dinero "apartado" para un gasto esencial. Registro propio (no es
+-- cache de Nessie): el saldo disponible = saldo del ledger − Σ cajitas activas.
+-- Ver app/cajitas.py.
+CREATE TABLE IF NOT EXISTS cajitas (
+    id BIGSERIAL PRIMARY KEY,
+    account_id TEXT NOT NULL REFERENCES accounts_cache(account_id),
+    name TEXT NOT NULL,
+    target_amount NUMERIC NOT NULL,
+    linked_expense_name TEXT NOT NULL,
+    reserve_date DATE NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    was_early_withdrawal BOOLEAN NOT NULL DEFAULT false,
+    days_early_at_withdrawal INTEGER,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS cajitas_account_status_idx ON cajitas (account_id, status);
 """
 
 
@@ -95,7 +112,7 @@ def run() -> None:
         release_connection(conn)
     print(
         "[init_db] Tablas listas: accounts_cache, purchases_cache, bills_cache, "
-        "rescue_plans_cache, merchants_cache, deposits_cache"
+        "rescue_plans_cache, merchants_cache, deposits_cache, cajitas"
     )
 
 
