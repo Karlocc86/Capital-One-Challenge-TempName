@@ -8,13 +8,13 @@ import { recentTransactions, upcomingTransactions } from "@/lib/mockData";
 export default function Home() {
   return (
     <AppShell>
-      <div className="flex flex-1 flex-col gap-6 lg:flex-row lg:items-start">
-        <div className="flex flex-1 flex-col gap-6 lg:max-w-2xl">
+      <div className="flex flex-1 flex-col gap-6 lg:flex-row lg:items-stretch">
+        <div className="flex flex-1 flex-col gap-6">
           <BalanceOverviewCard />
           <TransactionList title="Transacciones recientes" transactions={recentTransactions} />
         </div>
 
-        <div className="flex w-full flex-col gap-6 lg:w-80 lg:shrink-0">
+        <div className="flex w-full flex-col gap-6 lg:w-96 lg:shrink-0">
           <TransactionList
             title="Próximas transacciones"
             transactions={upcomingTransactions}
