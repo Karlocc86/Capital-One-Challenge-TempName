@@ -26,3 +26,57 @@ body {
     text-wrap: balance;
   }
 }
+
+@keyframes canica-teleport-out {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.2);
+    filter: blur(4px);
+  }
+}
+
+@keyframes canica-teleport-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.2);
+    filter: blur(4px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.25);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes canica-ring-pulse {
+  0% {
+    opacity: 0.7;
+    transform: scale(0.4);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.2);
+  }
+}
+
+.canica-out {
+  animation: canica-teleport-out 260ms ease-in forwards;
+}
+
+.canica-in {
+  animation: canica-teleport-in 360ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.canica-ring {
+  animation: canica-ring-pulse 500ms ease-out forwards;
+}

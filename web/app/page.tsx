@@ -53,14 +53,18 @@ export default function Home() {
     <AppShell>
       <div className="flex flex-1 flex-col gap-6 lg:flex-row lg:items-stretch">
         <div className="flex flex-1 flex-col gap-6">
-          <BalanceOverviewCard summary={summary.data} error={summary.error} />
-          <TransactionList
-            title="Transacciones recientes"
-            transactions={recent.data}
-            error={recent.error}
-            emptyMessage="Todavía no hay compras registradas."
-            viewAllHref="/transacciones"
-          />
+          <div data-avatar-target="balance">
+            <BalanceOverviewCard summary={summary.data} error={summary.error} />
+          </div>
+          <div data-avatar-target="transactions">
+            <TransactionList
+              title="Transacciones recientes"
+              transactions={recent.data}
+              error={recent.error}
+              emptyMessage="Todavía no hay compras registradas."
+              viewAllHref="/transacciones"
+            />
+          </div>
         </div>
 
         <div className="flex w-full flex-col gap-6 lg:w-96 lg:shrink-0">
@@ -71,8 +75,12 @@ export default function Home() {
             emptyMessage="No tienes pagos programados."
             viewAllHref="/proximas"
           />
-          <BankingFeaturesCard />
-          <SpendingCard summary={summary.data} error={summary.error} />
+          <div data-avatar-target="banking_features">
+            <BankingFeaturesCard />
+          </div>
+          <div data-avatar-target="spending">
+            <SpendingCard summary={summary.data} error={summary.error} />
+          </div>
         </div>
       </div>
     </AppShell>

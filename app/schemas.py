@@ -65,3 +65,17 @@ class FinancialRescuePlan(BaseModel):
     summary: str
     insolvency_warning: str
     recommendations: list[Recommendation]
+
+
+class SectionInsights(BaseModel):
+    """Una conclusión corta (1 frase) por widget del dashboard — las usa el
+    avatar canica para mostrar un análisis distinto en cada parada."""
+
+    balance: str
+    transactions: str
+    spending: str
+    banking_features: str
+    savings: str
+    credit: str
+    loans: str
+    rewards: str
