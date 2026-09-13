@@ -86,7 +86,10 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="hidden h-full w-64 shrink-0 flex-col bg-brand-sidebar text-white sm:flex">
+    // La columna exterior estira el fondo oscuro a toda la altura de la página;
+    // el aside interior queda fijo (sticky) bajo el header al hacer scroll.
+    <div className="hidden w-64 shrink-0 bg-brand-sidebar sm:block">
+    <aside className="sticky top-16 flex h-[calc(100vh-4rem)] w-64 flex-col bg-brand-sidebar text-white sm:top-20 sm:h-[calc(100vh-5rem)]">
       <div className="h-6" />
 
       <nav className="flex flex-col gap-1 overflow-y-auto px-3">
@@ -129,5 +132,6 @@ export default function Sidebar() {
         </button>
       </div>
     </aside>
+    </div>
   );
 }

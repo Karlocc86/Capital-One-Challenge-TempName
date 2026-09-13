@@ -1,19 +1,20 @@
 """
 Siembra el "mundo" del usuario demo en Nessie: un customer, una cuenta
-Checking y una Savings, 8 merchants de Monterrey, 26 purchases fijas de los
-últimos 30 días, 2 depósitos de nómina (quincenas) y 4 bills recurrentes.
+Checking y una Savings, 9 merchants de Monterrey, 29 purchases fijas de los
+últimos 30 días, 2 depósitos de nómina (quincenas) y 9 bills recurrentes (renta, servicios y 7 suscripciones).
 
 El dataset es DETERMINISTA (nada de random): cada purchase tiene su comercio,
 monto y día relativo a hoy escritos a mano. Así el forecast siempre proyecta
-lo mismo (~11 días a la insolvencia) y la UI siempre muestra las mismas
+lo mismo (~9 días a la insolvencia) y la UI siempre muestra las mismas
 transacciones.
 
 Perfil demo: "Ricardo Torres", trabajador de ingreso medio-bajo en Monterrey.
 Los montos están calibrados con datos reales del INEGI (ENIGH 2024, decil
 III de ingreso: $36,845 MXN de ingreso corriente trimestral promedio, ~$12,282
 MXN/mes) — no son números arbitrarios, representan un perfil de vulnerabilidad
-financiera real, incluyendo un pago recurrente a una casa de empeño/préstamo
-personal informal, justo el tipo de señal que el forecast debe detectar.
+financiera real: renta alta más suscripciones prescindibles que, sumadas a las
+compras, superan el ingreso — justo el tipo de señal que el forecast debe
+detectar y sobre la que el agente puede actuar (cancelar).
 
 Idempotencia:
 - customer / accounts / merchants / bills: find-or-create por nombre.
@@ -96,7 +97,14 @@ def find_or_create_merchants() -> dict[str, dict]:
     merchants: dict[str, dict] = {}
     for spec in MERCHANTS:
         if spec["name"] in existing:
-            merchants[spec["name"]] = existing[spec["name"]]
+            merchant = existing[spec["name"]]
+            if merchant.get("category") != spec["category"]:
+                # La category del merchant es la etiqueta de la UI: si cambió en
+                # el dataset, se actualiza en Nessie (el PUT sí la persiste).
+                nc.update_merchant(merchant["_id"], spec["name"], spec["category"], spec["address"])
+                merchant = {**merchant, "category": spec["category"]}
+                print(f"[seed] Merchant '{spec['name']}': category -> {spec['category']}")
+            merchants[spec["name"]] = merchant
             continue
         result = nc.create_merchant(
             name=spec["name"],

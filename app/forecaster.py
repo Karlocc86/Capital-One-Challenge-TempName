@@ -13,13 +13,14 @@ Cómo proyecta (día a día, `HORIZON_DAYS` hacia adelante):
 La insolvencia es el primer día en que el saldo proyectado queda en negativo.
 """
 
+import calendar
 from datetime import date, timedelta
 
 import pandas as pd
 from sklearn.linear_model import LinearRegression
 
 from app.ledger import bill_charges, infer_income_schedule
-from app.schemas import ForecastMetrics, ProjectionPoint
+from app.schemas import ForecastMetrics, MonthEndAnalysis, ProjectionPoint
 
 DAYS_PER_MONTH = 30
 HORIZON_DAYS = 90
@@ -120,5 +121,38 @@ class FinancialForecaster:
             paycheck_amount=income[0][1] if income else None,
             lowest_balance=round(lowest_balance, 2),
             lowest_balance_date=lowest_date,
+            month_end=self._month_end_analysis(projection),
             projection=projection,
+        )
+
+    def _month_end_analysis(self, projection: list[ProjectionPoint]) -> MonthEndAnalysis:
+        """¿Llega a fin de mes? Saldo proyectado el último día del mes y déficit mensual estructural."""
+        month_end = date(
+            self.today.year, self.today.month, calendar.monthrange(self.today.year, self.today.month)[1]
+        )
+        until_month_end = [pt for pt in projection if pt.date <= month_end]
+        # Ingreso mensual: dos quincenas (o lo que haya entrado en los últimos 30 días).
+        window_start = self.today - timedelta(days=DAYS_PER_MONTH)
+        last_month_income = sum(
+            float(d.get("amount", 0.0))
+            for d in self.deposits
+            if date.fromisoformat(str(d.get("transaction_date"))[:10]) > window_start
+        )
+        last_month_purchases = sum(
+            float(p.get("amount", 0.0))
+            for p in self.purchases
+            if date.fromisoformat(str(p.get("purchase_date"))[:10]) > window_start
+        )
+        monthly_bills = sum(
+            float(b.get("payment_amount", 0.0)) for b in self.bills if b.get("status") == "recurring"
+        )
+        outflow = round(last_month_purchases + monthly_bills, 2)
+        return MonthEndAnalysis(
+            month_end_date=month_end,
+            projected_balance=until_month_end[-1].balance if until_month_end else projection[0].balance,
+            lowest_balance_until_month_end=min(pt.balance for pt in until_month_end) if until_month_end else projection[0].balance,
+            reaches_month_end=all(pt.balance >= 0 for pt in until_month_end),
+            monthly_income=round(last_month_income, 2),
+            monthly_outflow=outflow,
+            monthly_deficit=round(max(0.0, outflow - last_month_income), 2),
         )

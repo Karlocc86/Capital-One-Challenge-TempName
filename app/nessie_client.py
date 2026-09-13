@@ -266,6 +266,12 @@ def create_merchant(name: str, category: str, address: dict, geocode: dict | Non
     return _request("POST", "/merchants", json=payload)
 
 
+def update_merchant(merchant_id: str, name: str, category: str, address: dict) -> dict:
+    """PUT /merchants/{id}. Verificado: sí persiste el cambio de category (a diferencia del balance de accounts)."""
+    payload = {"name": name, "category": category, "address": address}
+    return _request("PUT", f"/merchants/{merchant_id}", json=payload)
+
+
 # ---------- Loans ----------
 # Agregado por Samuel: soporte pa préstamos, usado por la pantalla "Préstamos"
 # del frontend. Nessie los cuelga de una account (no del customer directo),

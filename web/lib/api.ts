@@ -79,6 +79,17 @@ export type Bill = {
 
 export type ProjectionPoint = { date: string; balance: number; events: string[] };
 
+/** ¿Llega a fin de mes? Lo calcula el forecaster (app/forecaster.py), no el LLM. */
+export type MonthEndAnalysis = {
+  month_end_date: string;
+  projected_balance: number;
+  lowest_balance_until_month_end: number;
+  reaches_month_end: boolean;
+  monthly_income: number;
+  monthly_outflow: number;
+  monthly_deficit: number;
+};
+
 export type ForecastMetrics = {
   burn_rate_daily: number;
   insolvency_date: string | null;
@@ -88,16 +99,41 @@ export type ForecastMetrics = {
   paycheck_amount: number | null;
   lowest_balance: number | null;
   lowest_balance_date: string | null;
+  month_end: MonthEndAnalysis | null;
   /** Saldo proyectado día a día (90 días) con los cargos/abonos puntuales de cada día. */
   projection: ProjectionPoint[];
 };
 
-export type RescueAction = { description: string; estimated_impact: string };
+export type RecommendationArea =
+  | "fin_de_mes"
+  | "suscripciones"
+  | "comida_chatarra"
+  | "gastos_hormiga"
+  | "ahorro"
+  | "integral";
+
+export type Recommendation = {
+  area: RecommendationArea;
+  title: string;
+  description: string;
+  estimated_impact: string;
+  priority: number;
+};
+
+export const RECOMMENDATION_AREA_LABELS: Record<RecommendationArea, string> = {
+  fin_de_mes: "Fin de mes",
+  suscripciones: "Suscripciones",
+  comida_chatarra: "Comida chatarra",
+  gastos_hormiga: "Gastos hormiga",
+  ahorro: "Ahorro",
+  integral: "Integral",
+};
 
 export type RescuePlan = {
   summary: string;
   insolvency_warning: string;
-  recommended_actions: RescueAction[];
+  /** Una por área, ordenadas por prioridad (1 = más importante). */
+  recommendations: Recommendation[];
 };
 
 export type Forecast = {
@@ -157,18 +193,20 @@ export const formatLongDate = (iso: string) => {
 
 // ---------- Presentación de transacciones ----------
 
-export type BadgeColor = "emerald" | "rose" | "red" | "green" | "sky" | "amber" | "violet" | "slate";
+export type BadgeColor = "emerald" | "rose" | "red" | "green" | "sky" | "amber" | "violet" | "indigo" | "slate";
 
 /** Color del círculo por categoría (la categoría viene del merchant en Nessie). */
 const CATEGORY_BADGES: Record<string, BadgeColor> = {
   Supermercado: "sky",
   "Comida y bebida": "rose",
+  "Comida chatarra": "rose",
   "Transporte y combustible": "red",
   "Servicios y facturas": "emerald",
   Salud: "green",
   Ropa: "amber",
   Ingresos: "emerald",
   Vivienda: "violet",
+  Suscripciones: "indigo",
   Deuda: "red",
 };
 

@@ -1,6 +1,6 @@
 # Fixtures — respaldo para la demo
 
-Respuestas **reales** de la API para el usuario demo (Ricardo Torres, account `98f6dab5-9b48-4ebe-8f71-13e7308d5b2d`), capturadas y verificadas — no son mocks inventados.
+Respuestas **reales** de la API para el usuario demo (Ricardo Torres, account `0ce1d6a3-551f-420f-af8a-62971a612f0f`), capturadas y verificadas — no son mocks inventados.
 
 | Archivo | Endpoint | Qué alimenta en la UI |
 |---|---|---|
@@ -34,7 +34,7 @@ python -m http.server 8001
 Con el backend corriendo y Nessie/Postgres/Gemini sanos (las fechas de las transacciones son relativas al día del seed: si pasaron días, corre antes `python scripts/seed.py --reset` y `python scripts/sync.py <account_id>`):
 
 ```bash
-ID=98f6dab5-9b48-4ebe-8f71-13e7308d5b2d
+ID=0ce1d6a3-551f-420f-af8a-62971a612f0f
 curl -s "http://localhost:8000/forecast/$ID?force_refresh=true" -o fixtures/forecast_ricardo_torres_backup.json
 curl -s "http://localhost:8000/summary/$ID"                     -o fixtures/summary_ricardo_torres.json
 curl -s "http://localhost:8000/transactions/$ID?limit=20"       -o fixtures/transactions_ricardo_torres.json

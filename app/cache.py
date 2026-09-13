@@ -8,15 +8,16 @@ directamente, para no depender de Nessie en vivo durante la demo.
 import json
 
 from app.db import get_connection, release_connection
+from app.categories import classify_purchase
 from app.demo_data import opening_balance_for, real_amount
 from app.nessie_client import get_account as nessie_get_account
 from app.nessie_client import (
     get_accounts_for_customer as nessie_get_accounts_for_customer,
 )
+from app.nessie_client import get_merchants as nessie_get_merchants
 from app.nessie_client import (
     get_bills_for_account,
     get_deposits_for_account,
-    get_merchants,
     get_purchases_for_account,
 )
 
@@ -59,7 +60,7 @@ def sync_snapshot(account_id: str) -> None:
     account = nessie_get_account(account_id)
     customer_id = account.get("customer_id")
     sibling_accounts = nessie_get_accounts_for_customer(customer_id) if customer_id else []
-    merchants = get_merchants()
+    merchants = nessie_get_merchants()
     purchases = get_purchases_for_account(account_id)
     deposits = get_deposits_for_account(account_id)
     bills = get_bills_for_account(account_id)
@@ -299,7 +300,9 @@ def get_purchases(account_id: str, force_sync: bool = False) -> list[dict]:
             "status": r[4],
             "merchant_id": r[5],
             "merchant_name": r[6],
-            "category": r[7],
+            "merchant_category": r[7],
+            # Categoría refinada (p. ej. un refresco en el OXXO es "Comida chatarra").
+            "category": classify_purchase(r[7], r[3]),
         }
         for r in rows
     ]

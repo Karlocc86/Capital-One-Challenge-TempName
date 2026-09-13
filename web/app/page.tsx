@@ -16,9 +16,10 @@ import {
   type TransactionRow,
 } from "@/lib/api";
 
-// Cuántas compras se muestran en "Transacciones recientes" (vista previa;
-// /purchases/{id} devuelve todas).
+// Vistas previas del dashboard; "Ver todo" lleva a la lista completa
+// (/transacciones y /proximas).
 const RECENT_LIMIT = 7;
+const UPCOMING_LIMIT = 5;
 
 type Loadable<T> = { data: T | null; error: string | null };
 
@@ -43,7 +44,8 @@ export default function Home() {
       .catch((err: Error) => setRecent({ data: null, error: err.message }));
 
     fetchBills()
-      .then((body) => setUpcoming({ data: body.data.map(billToRow), error: null }))
+      // /bills ya viene ordenado por próxima fecha de cobro.
+      .then((body) => setUpcoming({ data: body.data.slice(0, UPCOMING_LIMIT).map(billToRow), error: null }))
       .catch((err: Error) => setUpcoming({ data: null, error: err.message }));
   }, []);
 

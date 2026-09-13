@@ -15,7 +15,7 @@ from app.cache import (
     get_purchases,
     save_rescue_plan,
 )
-from app.demo_data import DEMO_EMPLOYER, DEMO_MONTHLY_INCOME
+from app.demo_data import DEMO_EMPLOYER, DEMO_MONTHLY_INCOME, DISCRETIONARY_BILLS
 from app.forecaster import FinancialForecaster
 from app.ledger import compute_balance
 
@@ -35,9 +35,8 @@ SUMMARY_WINDOW_DAYS = 30
 BILL_CATEGORIES = {
     "Renta": "Vivienda",
     "Servicios": "Servicios y facturas",
-    "Préstamo": "Deuda",
-    "Abono Coppel": "Deuda",
 }
+DISCRETIONARY_CATEGORY = "Suscripciones"
 
 app = FastAPI(title="Fin de Mes API")
 
@@ -64,9 +63,13 @@ def _load_account(account_id: str) -> dict:
 
 
 def _next_payment_date(recurring_date: int, today: date) -> date:
-    """Próxima fecha en que se cobra una bill que se paga el día `recurring_date` de cada mes."""
+    """
+    Próxima fecha en que se cobra una bill que se paga el día `recurring_date`
+    de cada mes, estrictamente después de hoy (la de hoy ya la descontó el
+    ledger, ver app/ledger.py).
+    """
     year, month = today.year, today.month
-    if recurring_date < today.day:
+    if recurring_date <= today.day:
         month += 1
         if month > 12:
             year, month = year + 1, 1
@@ -234,7 +237,8 @@ def bills(account_id: str):
                 "recurring_date": b["recurring_date"],
                 "next_payment_date": next_date.isoformat(),
                 "days_until": (next_date - today).days,
-                "category": BILL_CATEGORIES.get(b["nickname"], "Servicios y facturas"),
+                "category": BILL_CATEGORIES.get(b["nickname"], DISCRETIONARY_CATEGORY if b["nickname"] in DISCRETIONARY_BILLS else "Servicios y facturas"),
+                "discretionary": b["nickname"] in DISCRETIONARY_BILLS,
                 "status": b["status"],
                 "direction": "out",
             }
@@ -286,7 +290,9 @@ def purchases(account_id: str):
             "date": p["purchase_date"],
             "merchant_id": p["merchant_id"],
             "merchant": p["merchant_name"] or p["description"] or "Compra",
+            # Categoría de la compra (refinada: un refresco en OXXO es "Comida chatarra").
             "category": p["category"] or "Otros",
+            "merchant_category": p["merchant_category"] or "Otros",
             "description": p["description"],
             "status": p["status"],
         }
@@ -300,7 +306,7 @@ def purchases(account_id: str):
             {
                 "merchant_id": p["merchant_id"],
                 "name": p["merchant"],
-                "category": p["category"],
+                "category": p["merchant_category"],
                 "total_spent": 0.0,
                 "purchase_count": 0,
             },

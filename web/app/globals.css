@@ -3,18 +3,19 @@
 @tailwind utilities;
 
 :root {
-  --background: #f4f6f9;
+  /* Mismo azul que el lienzo del dashboard (brand.canvas), para que el fondo
+     cubra toda la pantalla sin franjas al hacer scroll o al cargar. */
+  --background: #123f63;
   --foreground: #16283f;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  min-height: 100%;
 }
 
 body {
+  margin: 0;
   color: var(--foreground);
   background: var(--background);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;

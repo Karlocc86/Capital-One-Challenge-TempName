@@ -1,18 +1,35 @@
 """
 Capa cognitiva: usa Gemini (google-genai) para convertir un ForecastMetrics
-+ purchases en un FinancialRescuePlan con salida estructurada (response_schema).
++ movimientos en un FinancialRescuePlan con salida estructurada
+(response_schema): resumen, advertencia y una lista de recomendaciones por
+área (fin de mes, suscripciones, comida chatarra, gastos hormiga, ahorro,
+integral). Los números (saldo, déficit, totales por área) los calcula el
+backend; Gemini solo redacta sobre ellos.
+
 Si Gemini falla (timeout, rate limit, key inválida, lo que sea) regresa un
-plan de respaldo genérico en vez de dejar que la excepción suba — este agente
-nunca debe tirar un 500.
+plan de respaldo en vez de dejar que la excepción suba — este agente nunca
+debe tirar un 500.
 """
 
 from google import genai
 from google.genai import errors, types
 
+from app.categories import HORMIGA_MAX, spending_breakdown
 from app.config import GEMINI_API_KEY
-from app.schemas import Action, FinancialRescuePlan, ForecastMetrics
+from app.demo_data import DISCRETIONARY_BILLS
+from app.schemas import FinancialRescuePlan, ForecastMetrics, Recommendation
 
 MODEL = "gemini-flash-lite-latest"
+
+# Cada área debe aparecer exactamente una vez en el plan.
+AREAS = (
+    ("fin_de_mes", "Análisis de fin de mes: ¿llega a fin de mes a este paso? ¿cuánto tiene que recortar al mes?"),
+    ("suscripciones", "Suscripciones prescindibles: cuáles cancelar o pausar primero y cuánto libera."),
+    ("comida_chatarra", "Comida chatarra: reducirla por dinero Y por salud (menciona el beneficio de salud concreto, sin sermonear)."),
+    ("gastos_hormiga", f"Gastos hormiga (compras chicas < ${HORMIGA_MAX:.0f} en OXXO/tiendas que se acumulan sin sentirse): cómo cortarlos."),
+    ("ahorro", "Ahorro: qué hacer con lo que sobre cuando cierre un mes en positivo (apartar automático a la cuenta de Ahorro)."),
+    ("integral", "Recomendación integral: el cambio de fondo más importante para su situación (uno solo, el que más mueve la aguja)."),
+)
 
 
 class CognitiveFinancialAgent:
@@ -30,7 +47,7 @@ class CognitiveFinancialAgent:
         self.client = genai.Client(
             api_key=api_key,
             http_options=types.HttpOptions(
-                timeout=10_000,
+                timeout=15_000,
                 retry_options=types.HttpRetryOptions(attempts=1),
             ),
         )
@@ -44,7 +61,9 @@ class CognitiveFinancialAgent:
     ) -> tuple[FinancialRescuePlan, bool]:
         """Regresa (plan, exito). exito=False si se usó el plan de respaldo —
         el llamador no debe cachear un plan con exito=False."""
-        prompt = self._build_prompt(forecast, purchases, bills or [], balance)
+        bills = bills or []
+        breakdown = spending_breakdown(purchases, bills, DISCRETIONARY_BILLS)
+        prompt = self._build_prompt(forecast, purchases, bills, balance, breakdown)
 
         try:
             response = await self.client.aio.models.generate_content(
@@ -59,13 +78,15 @@ class CognitiveFinancialAgent:
                     # con ese parámetro (verificado 2026-09-12). Sin él funciona.
                 ),
             )
-            return response.parsed, True
+            plan: FinancialRescuePlan = response.parsed
+            plan.recommendations.sort(key=lambda r: r.priority)
+            return plan, True
         except errors.APIError as e:
             print(f"[agent] Gemini falló ({type(e).__name__}): {e}")
-            return self._fallback_plan(forecast), False
+            return self._fallback_plan(forecast, breakdown), False
         except Exception as e:
             print(f"[agent] Error inesperado generando el plan ({type(e).__name__}): {e}")
-            return self._fallback_plan(forecast), False
+            return self._fallback_plan(forecast, breakdown), False
 
     def _build_prompt(
         self,
@@ -73,100 +94,162 @@ class CognitiveFinancialAgent:
         purchases: list[dict],
         bills: list[dict],
         balance: float | None,
+        breakdown: dict,
     ) -> str:
         purchases_summary = (
             "\n".join(
                 f"- {p.get('purchase_date')}: {p.get('merchant_name') or p.get('description') or 'compra'}"
                 f"{' [' + p['category'] + ']' if p.get('category') else ''} (${p.get('amount', 0):.2f})"
-                for p in purchases[:15]
+                for p in purchases[:20]
             )
             or "Sin compras registradas."
         )
         bills_summary = (
             "\n".join(
-                f"- {b.get('payee') or b.get('nickname')}: ${b.get('payment_amount', 0):.2f} el día {b.get('recurring_date')} de cada mes"
+                f"- {b.get('payee') or b.get('nickname')}: ${b.get('payment_amount', 0):.2f} el día {b.get('recurring_date')}"
+                f"{' (prescindible)' if b.get('nickname') in DISCRETIONARY_BILLS else ''}"
                 for b in bills
                 if b.get("status") == "recurring"
             )
             or "Sin pagos fijos registrados."
         )
 
-        context_lines = []
+        context: list[str] = []
         if balance is not None:
-            context_lines.append(f"Saldo disponible hoy: ${balance:,.2f} MXN.")
+            context.append(f"Saldo disponible hoy: ${balance:,.2f} MXN.")
         if forecast.next_paycheck_date:
-            context_lines.append(
+            context.append(
                 f"Próxima nómina esperada: {forecast.next_paycheck_date} (${forecast.paycheck_amount or 0:,.2f})."
             )
         if forecast.insolvency_date:
-            context_lines.append(
-                f"Se proyecta insolvencia el {forecast.insolvency_date} "
-                f"(en {forecast.days_remaining} días), con un gasto promedio de "
-                f"${forecast.burn_rate_daily:.2f}/día (compras + pagos fijos prorrateados)."
+            context.append(
+                f"Se proyecta insolvencia el {forecast.insolvency_date} (en {forecast.days_remaining} días); "
+                f"gasto promedio ${forecast.burn_rate_daily:.2f}/día (compras + pagos fijos prorrateados)."
             )
         else:
-            context_lines.append("No se proyecta insolvencia en los próximos 90 días con la tendencia actual.")
+            context.append("No se proyecta insolvencia en los próximos 90 días con la tendencia actual.")
         if forecast.lowest_balance is not None and forecast.lowest_balance_date:
-            context_lines.append(
-                f"Punto más bajo proyectado: ${forecast.lowest_balance:,.2f} el {forecast.lowest_balance_date}."
+            context.append(f"Punto más bajo proyectado: ${forecast.lowest_balance:,.2f} el {forecast.lowest_balance_date}.")
+
+        me = forecast.month_end
+        if me:
+            verdict = "SÍ llega a fin de mes" if me.reaches_month_end else "NO llega a fin de mes"
+            context.append(
+                f"Fin de mes ({me.month_end_date}): {verdict}. Saldo proyectado ese día ${me.projected_balance:,.2f}; "
+                f"punto más bajo antes de fin de mes ${me.lowest_balance_until_month_end:,.2f}. "
+                f"Ingreso mensual ${me.monthly_income:,.2f} vs egresos mensuales ${me.monthly_outflow:,.2f} "
+                f"→ déficit estructural ${me.monthly_deficit:,.2f}/mes (lo mínimo que hay que recortar)."
             )
-        # Los cargos puntuales de las próximas semanas son lo que el usuario
-        # necesita ver venir (la renta pega de golpe, no prorrateada).
+
         upcoming = [
             f"- {pt.date}: {', '.join(pt.events)} → saldo ${pt.balance:,.2f}"
             for pt in forecast.projection[1:31]
             if pt.events
         ]
         if upcoming:
-            context_lines.append("Movimientos fijos de los próximos 30 días:\n" + "\n".join(upcoming))
+            context.append("Movimientos fijos de los próximos 30 días:\n" + "\n".join(upcoming))
+
+        def _top(items: list[tuple[str, float, int]]) -> str:
+            return ", ".join(f"{name} ${total:,.0f} ({n})" for name, total, n in items) or "ninguno"
+
+        diagnosis = (
+            f"- Suscripciones prescindibles: ${breakdown['subscriptions_total']:,.2f}/mes → "
+            + (", ".join(f"{n} ${a:,.0f}" for n, a in breakdown["subscriptions"]) or "ninguna")
+            + f"\n- Comida chatarra (últimos 30 días): ${breakdown['junk_food_total']:,.2f} en "
+            f"{breakdown['junk_food_count']} compras → {_top(breakdown['junk_food_top'])}"
+            f"\n- Gastos hormiga (< ${HORMIGA_MAX:.0f}, últimos 30 días): ${breakdown['hormiga_total']:,.2f} en "
+            f"{breakdown['hormiga_count']} compras → {_top(breakdown['hormiga_top'])}"
+        )
+
+        areas = "\n".join(f'- area="{key}": {what}' for key, what in AREAS)
 
         return (
             "Eres un asesor financiero para una persona de ingreso medio-bajo en México "
             "(montos en pesos mexicanos). Con base en este análisis, genera un plan de "
-            "rescate breve, concreto y realista para el usuario.\n\n"
-            + "\n".join(context_lines)
-            + "\n\nPagos fijos mensuales:\n"
-            f"{bills_summary}\n\n"
-            "Compras recientes (comercio [categoría]):\n"
-            f"{purchases_summary}\n\n"
-            "Genera: un resumen breve (summary), una advertencia de insolvencia en "
-            "lenguaje claro para el usuario (insolvency_warning), y 2-3 acciones "
-            "concretas recomendadas (recommended_actions) que se puedan ejecutar esta "
-            "semana — menciona comercios o categorías específicas del historial cuando "
-            "aplique — cada una con su descripción y el impacto estimado en texto simple "
-            '(ej. "+$500/mes" o "retrasa insolvencia 5 días").'
+            "rescate breve, concreto y realista.\n\n"
+            "## Situación\n" + "\n".join(context) + "\n\n"
+            "## Diagnóstico por área\n" + diagnosis + "\n\n"
+            "## Pagos fijos mensuales\n" + bills_summary + "\n\n"
+            "## Compras recientes (comercio [categoría])\n" + purchases_summary + "\n\n"
+            "## Qué generar\n"
+            "1. summary: 1-2 frases con la situación (usa los números).\n"
+            "2. insolvency_warning: advertencia clara para el usuario (fecha, días, qué la provoca).\n"
+            "3. recommendations: EXACTAMENTE 6, una por área, en este orden de áreas:\n"
+            f"{areas}\n"
+            "Cada recomendación: title (≤ 8 palabras, imperativo), description (1-2 frases, "
+            "concreta, con montos y nombres reales del historial), estimated_impact (ej. "
+            '"+$1,034/mes", "retrasa insolvencia 6 días"), priority (1 = la más importante; '
+            "asigna prioridades distintas del 1 al 6 según cuánto mueve la aguja para ESTE usuario). "
+            "Sé conciso: nada de relleno ni frases motivacionales."
         )
 
-    def _fallback_plan(self, forecast: ForecastMetrics) -> FinancialRescuePlan:
+    def _fallback_plan(self, forecast: ForecastMetrics, breakdown: dict) -> FinancialRescuePlan:
+        """Plan de respaldo con los números reales del diagnóstico (sin LLM)."""
+        me = forecast.month_end
         if forecast.insolvency_date:
             warning = (
-                "No pudimos generar un análisis detallado en este momento, pero tu "
-                f"tendencia actual apunta a quedarte sin saldo alrededor del "
-                f"{forecast.insolvency_date}."
+                f"Tu tendencia actual apunta a quedarte sin saldo el {forecast.insolvency_date} "
+                f"(en {forecast.days_remaining} días)."
             )
         else:
-            warning = (
-                "No pudimos generar un análisis detallado en este momento, pero no "
-                "se detecta una tendencia de insolvencia inminente."
-            )
+            warning = "No se detecta una tendencia de insolvencia inminente."
 
+        if me and not me.reaches_month_end:
+            month_end_desc = (
+                f"A este paso no llegas a fin de mes: tu punto más bajo antes del {me.month_end_date} "
+                f"es ${me.lowest_balance_until_month_end:,.0f}. Necesitas recortar al menos "
+                f"${me.monthly_deficit:,.0f} al mes."
+            )
+        elif me:
+            month_end_desc = (
+                f"Sí llegas a fin de mes: saldo proyectado ${me.projected_balance:,.0f} el {me.month_end_date}."
+            )
+        else:
+            month_end_desc = "No hay suficientes datos para proyectar el fin de mes."
+
+        subs = breakdown.get("subscriptions", [])
+        recs = [
+            Recommendation(
+                area="fin_de_mes", title="Recorta el déficit mensual", description=month_end_desc,
+                estimated_impact=f"-${me.monthly_deficit:,.0f}/mes de déficit" if me else "Variable", priority=1,
+            ),
+            Recommendation(
+                area="suscripciones", title="Cancela las suscripciones prescindibles",
+                description="Pausa hoy " + (", ".join(n for n, _ in subs) or "tus suscripciones de streaming/gym") + ".",
+                estimated_impact=f"+${breakdown.get('subscriptions_total', 0):,.0f}/mes", priority=2,
+            ),
+            Recommendation(
+                area="comida_chatarra", title="Reduce la comida chatarra a la mitad",
+                description=(
+                    f"Gastaste ${breakdown.get('junk_food_total', 0):,.0f} en alitas, tacos y botanas este mes. "
+                    "Cocinar en casa baja el gasto y el consumo de sodio, grasa y azúcar."
+                ),
+                estimated_impact=f"+${breakdown.get('junk_food_total', 0) / 2:,.0f}/mes", priority=3,
+            ),
+            Recommendation(
+                area="gastos_hormiga", title="Frena los gastos hormiga",
+                description=(
+                    f"{breakdown.get('hormiga_count', 0)} compras chicas sumaron ${breakdown.get('hormiga_total', 0):,.0f}. "
+                    "Ponte un tope semanal en efectivo para OXXO y antojos."
+                ),
+                estimated_impact=f"+${breakdown.get('hormiga_total', 0) / 2:,.0f}/mes", priority=4,
+            ),
+            Recommendation(
+                area="ahorro", title="Aparta el sobrante el día de la nómina",
+                description="Cuando un mes cierre en positivo, mueve el excedente a tu cuenta de Ahorro el mismo día que cae la quincena.",
+                estimated_impact="Colchón de 1 renta en ~6 meses", priority=5,
+            ),
+            Recommendation(
+                area="integral", title="Alinea tus gastos fijos con tu ingreso",
+                description="Tus pagos fijos más la comida fuera superan lo que ganas; sin bajar uno de los dos, ningún ajuste chico alcanza.",
+                estimated_impact="Cierra el déficit estructural", priority=6,
+            ),
+        ]
         return FinancialRescuePlan(
             summary=(
-                "No pudimos generar un plan personalizado en este momento. Aquí "
-                "tienes recomendaciones generales mientras se restablece el servicio."
+                "No pudimos generar un plan personalizado con IA en este momento; estas "
+                "recomendaciones se calcularon directamente de tus movimientos."
             ),
             insolvency_warning=warning,
-            recommended_actions=[
-                Action(
-                    description=(
-                        "Revisa tus gastos recurrentes (bills) y considera pausar "
-                        "los que no sean esenciales."
-                    ),
-                    estimated_impact="Variable",
-                ),
-                Action(
-                    description="Evita compras no esenciales hasta tu próximo ingreso.",
-                    estimated_impact="Variable",
-                ),
-            ],
+            recommendations=recs,
         )

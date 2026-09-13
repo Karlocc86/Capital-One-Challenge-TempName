@@ -27,6 +27,7 @@ const badgeClasses: Record<BadgeColor, string> = {
   sky: "bg-sky-500",
   amber: "bg-amber-500",
   violet: "bg-violet-500",
+  indigo: "bg-indigo-500",
   slate: "bg-slate-500",
 };
 

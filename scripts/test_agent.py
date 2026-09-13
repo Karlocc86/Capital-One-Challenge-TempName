@@ -17,7 +17,7 @@ from app.agent import CognitiveFinancialAgent
 from app.config import DEMO_ACCOUNT_ID as _ENV_ACCOUNT_ID
 from app.forecaster import FinancialForecaster
 
-DEMO_ACCOUNT_ID = _ENV_ACCOUNT_ID or "98f6dab5-9b48-4ebe-8f71-13e7308d5b2d"
+DEMO_ACCOUNT_ID = _ENV_ACCOUNT_ID or "0ce1d6a3-551f-420f-af8a-62971a612f0f"
 
 
 async def case_datos_normales(agent: CognitiveFinancialAgent) -> None:
